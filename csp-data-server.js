@@ -3,7 +3,18 @@ import cors from "cors";
 import path from "path";
 import YahooFinance from "yahoo-finance2";
 
-const yahooFinance = new YahooFinance();
+// Yahoo throttles the library's default self-identifying User-Agent from cloud/datacenter
+// IPs, causing "Failed to get crumb, status 429" (works fine from home IPs). Presenting a
+// real browser User-Agent gets past it. See gadicc/yahoo-finance2 issue #977.
+const CHROME = 120 + Math.floor(Math.random() * 20);
+const yahooFinance = new YahooFinance({
+  suppressNotices: ["yahooSurvey"],
+  fetchOptions: {
+    headers: {
+      "User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME}.0.0.0 Safari/537.36`,
+    },
+  },
+});
 const app = express();
 app.use(cors());
 app.use(express.static("."));                 // serves files in this folder
