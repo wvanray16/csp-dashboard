@@ -49,6 +49,14 @@
   .livebar label{color:var(--muted);font-size:11px}
   .livebar input{font-family:var(--mono);font-size:12px;background:var(--bg);color:var(--text);
     border:1px solid var(--border);border-radius:6px;padding:7px 9px;min-width:230px}
+  .ticker-entry{display:flex;align-items:center;gap:8px}
+  #addTickerMain{min-width:130px;font-size:14px;letter-spacing:.08em;text-transform:uppercase;
+    border-color:rgba(63,182,139,0.5)}
+  #addTickerMain:focus{outline:none;border-color:var(--call);box-shadow:0 0 0 1px rgba(63,182,139,0.4)}
+  .livebar-adv{display:flex;align-items:center;gap:7px;margin-left:auto;opacity:.7}
+  .livebar-adv:hover{opacity:1}
+  .livebar-adv label{font-size:10px}
+  .livebar-adv input{min-width:150px;font-size:11px}
   .btn{font-family:var(--mono);font-size:11.5px;letter-spacing:.03em;background:var(--panel-2);color:var(--text);
     border:1px solid var(--border);border-radius:6px;padding:7px 13px;cursor:pointer;transition:.15s}
   .btn:hover{border-color:var(--spot)}
@@ -198,10 +206,17 @@
   </nav>
 
   <div class="livebar" id="livebar">
-    <label for="backend">Your data server</label>
-    <input id="backend" type="text" value="http://localhost:3000" spellcheck="false" />
-    <button class="btn primary" id="connectBtn">Refresh from server</button>
-    <span class="hint" id="liveHint">Pulls puts, calls and earnings for every watchlist ticker.</span>
+    <div class="ticker-entry">
+      <label for="addTickerMain">Add ticker</label>
+      <input id="addTickerMain" type="text" placeholder="e.g. AAPL" spellcheck="false" autocomplete="off" />
+      <button class="btn add" id="addTickerBtn">Add</button>
+    </div>
+    <span class="hint" id="liveHint">Type any ticker symbol and press Enter to pull its live puts, calls, IV and earnings.</span>
+    <div class="livebar-adv">
+      <label for="backend">Data server</label>
+      <input id="backend" type="text" value="http://localhost:3000" spellcheck="false" />
+      <button class="btn sm" id="connectBtn">Refresh all</button>
+    </div>
   </div>
 
   <!-- =================== PUT SCREENER =================== -->
@@ -433,7 +448,7 @@ const DEMO = {
 /* ============================ STATE ============================ */
 const state = {
   view:'screener', mode:'demo', backend:(location.protocol==='file:'?'http://localhost:3000':location.origin),
-  watch:['COHR','AMD','COHX','CRDU','AMAT','AMDL','AMKR','AMPU','AMPX','APLD','APLX','AVGO','AVGG','AVGU','AVGX','CEG','CEGX','CLS','CSEX','DRAM','IREG','IREN','IREX','MRVL','MRVU','MVLL','PLTR','PLTU','SOFI','SOFX','SOXL','TQQQ','BE','SPCX','QCOM','QCML','QCMU','GLW','GLWG','VST'], chains:{}, earnings:{}, expiry:DEMO.expiry, asOf:DEMO.asOf,
+  watch:[], chains:{}, earnings:{}, expiry:DEMO.expiry, asOf:DEMO.asOf,
   basis:'mid', erFilter:'all', univFilter:'all', hoverSym:null, rankBy:'annual', sortKey:'annual', sortDir:-1, selKey:null,
   w:{yield:40,prem:20,safe:40}, roll:{buyback:null,credit:null,days:30,strike:null,key:null},
   positions:[], holdings:[], realized:[], volstats:{}, meta:{},
@@ -923,10 +938,34 @@ function renderChips(){
     el.querySelectorAll('[data-chip]').forEach(c=>c.classList.toggle('active', c.dataset.chip===sym)); render(); };
   el.querySelectorAll('[data-chip]').forEach(c=>{ const sym=c.dataset.chip; c.onclick=()=>activate(sym); });
   const add=document.getElementById('addTick');
-  add.onkeydown=(e)=>{if(e.key==='Enter'){const t=add.value.trim().toUpperCase();
-    if(t&&!state.watch.includes(t)){state.watch.push(t);
-      if(state.mode==='live') Promise.all([fetchSymbol(t),fetchEarnings(t),fetchHistory(t)]).then(()=>{renderChips();render();});
-      else{renderChips();render();}} add.value='';}};
+  add.onkeydown=(e)=>{if(e.key==='Enter'){const v=add.value; add.value=''; addTicker(v);}};
+}
+
+/* Add any ticker the user types: validate, fetch live data, give feedback. Shared by the
+   prominent livebar input and the inline "+ ADD" chip. */
+async function addTicker(sym){
+  sym=(sym||'').trim().toUpperCase();
+  if(!sym) return false;
+  if(!/^[A-Z0-9.\-^]{1,10}$/.test(sym)){ setLiveHint(`⚠ "${sym}" isn't a valid ticker symbol.`,true); return false; }
+  if(state.watch.includes(sym)){ setLiveHint(`${sym} is already on your list.`,false); state.hoverSym=sym; renderChips(); render(); return false; }
+  if(state.mode!=='live'){
+    state.watch.push(sym); if(DEMO.underlyings[sym]) state.hoverSym=sym; renderChips(); render();
+    setLiveHint(DEMO.underlyings[sym]?`${sym} added from the demo snapshot.`:`${sym} added — switch to Live for real market data.`, !DEMO.underlyings[sym]);
+    return true;
+  }
+  setLiveHint(`Loading ${sym}…`,false);
+  if(state.watch.length===0) state.expiry='';          // first ticker: let the server pick the nearest expiry
+  const ok=await fetchSymbol(sym);
+  if(!ok) return false;                                 // fetchSymbol already surfaced the error
+  const first=state.watch.length===0;
+  state.watch.push(sym);
+  if(first && state.chains[sym] && state.chains[sym].expiry) state.expiry=state.chains[sym].expiry;
+  await fetchEarnings(sym); await fetchHistory(sym);
+  state.hoverSym=sym;
+  syncExpiryOptions(); renderChips(); render(); renderCalls();
+  const n=state.watch.length;
+  setLiveHint(`Added ${sym}. ${n} ticker${n>1?'s':''} loaded — click a chip to inspect.`,false);
+  return true;
 }
 function syncExpiryOptions(){
   const set=new Set(); for(const s of state.watch){const ch=state.chains[s];if(ch&&ch.expirations)ch.expirations.forEach(e=>set.add(e));}
@@ -938,14 +977,17 @@ function syncExpiryOptions(){
 /* ============================ LIVE FETCH ============================ */
 async function fetchSymbol(sym){
   const base=state.backend.replace(/\/$/,'');
-  try{ const r=await fetch(`${base}/options?symbol=${encodeURIComponent(sym)}&date=${encodeURIComponent(state.expiry)}`);
-    if(!r.ok) throw new Error('HTTP '+r.status); const j=await r.json();
+  const dq=state.expiry?`&date=${encodeURIComponent(state.expiry)}`:'';
+  try{ let r;
+    try{ r=await fetch(`${base}/options?symbol=${encodeURIComponent(sym)}${dq}`); }
+    catch(e){ throw new Error("can't reach the data server — check your connection"); }
+    if(!r.ok) throw new Error(r.status===500?'no data — is that a valid ticker?':'server error (HTTP '+r.status+')'); const j=await r.json();
     const mp=(arr)=>(arr||[]).map(p=>[p.strike,p.bid??0,p.ask??0,p.impliedVolatility??p.iv??0,p.openInterest??p.oi??0]).filter(p=>p[0]);
     state.chains[sym]={ spot:j.underlyingPrice??j.spot??0, expiry:j.expiration||state.expiry,
       expirations:j.expirationDates||j.expirations||[state.expiry], puts:mp(j.puts), calls:mp(j.calls) };
     state.meta[sym]={ name:j.name||null, quoteType:j.quoteType||null, lev:computeLev(j.name, j.quoteType) };
     return true;
-  }catch(err){ setLiveHint(`⚠ ${sym}: ${err.message}. Is the server running with CORS on?`,true); return false; }
+  }catch(err){ setLiveHint(`⚠ ${sym}: ${err.message}`,true); return false; }
 }
 async function fetchEarnings(sym){
   const base=state.backend.replace(/\/$/,'');
@@ -1001,6 +1043,10 @@ function bind(){
   document.getElementById('navHist').onclick=()=>setView('history');
   document.getElementById('connectBtn').onclick=()=>{state.backend=document.getElementById('backend').value.trim();refreshLive();};
   document.getElementById('backend').onchange=(e)=>state.backend=e.target.value.trim();
+  const mainTick=document.getElementById('addTickerMain');
+  const submitTick=()=>{const v=mainTick.value; mainTick.value=''; addTicker(v); mainTick.focus();};
+  mainTick.onkeydown=(e)=>{if(e.key==='Enter') submitTick();};
+  document.getElementById('addTickerBtn').onclick=submitTick;
 
   // put screen
   document.getElementById('basisSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.basis=b.dataset.basis;
@@ -1059,10 +1105,11 @@ function bind(){
 loadStore(); bind(); renderChips(); syncExpiryOptions(); updateStatus(); render(); renderCalls(); renderPositions(); renderHistory();
 // Reflect the resolved backend (same-origin when hosted) in the connect field.
 document.getElementById('backend').value = state.backend;
-// When served from a real host (not opened as a local file), start in Live mode and pull data automatically.
+// When served from a real host (not opened as a local file), start in Live mode ready for input.
 if(location.protocol!=='file:' && !/^https?:\/\/localhost/.test(state.backend)){
   setMode('live');
-  refreshLive();
+  setLiveHint('Enter a ticker above and press Enter to pull its live options data.',false);
+  const mt=document.getElementById('addTickerMain'); if(mt) mt.focus();
 }
 </script>
 </body>
