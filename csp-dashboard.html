@@ -148,6 +148,7 @@
   thead th.sorted{color:var(--text)} thead th .arr{font-size:9px;margin-left:3px;color:var(--spot)}
   tbody td{padding:10px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border-soft);font-variant-numeric:tabular-nums}
   tbody tr{cursor:pointer;transition:background .12s} tbody tr:hover{background:rgba(91,141,239,0.06)}
+  tbody tr.sweet{background:rgba(63,182,139,0.10)} tbody tr.sweet td:first-child{box-shadow:inset 3px 0 0 var(--call)}
   tbody tr.sel{background:rgba(91,141,239,0.11)} tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--spot)}
   td.tk{font-weight:700} td.tk .exp{color:var(--faint);font-weight:400;font-size:10.5px;margin-left:7px}
   .tosend{cursor:pointer;border-bottom:1px dotted var(--faint);transition:.12s}
@@ -547,13 +548,16 @@ const PCOLS=[
   {key:'prem',label:'Premium',fmt:(o)=>o.prem.toFixed(2)},{key:'premDollar',label:'$/contract',fmt:(o)=>'<span class="num-i">$'+o.premDollar.toFixed(0)+'</span>'},
   {key:'cap',label:'Capital',fmt:(o)=>fmtMoney(o.cap)},{key:'staticRet',label:'Static',fmt:(o)=>fmtPct(o.staticRet,2)},
   {key:'annual',label:'Ann. yield',fmt:(o)=>'<span class="pill num-y">'+fmtPct(o.annual,1)+'</span>'},
-  {key:'delta',label:'Δ',fmt:(o)=>o.delta.toFixed(2)},{key:'pAssign',label:'P(assign)',fmt:(o)=>'<span class="num-r">'+fmtPct(o.pAssign,0)+'</span>'},
+  {key:'delta',label:'Δ',fmt:(o)=>o.delta.toFixed(2)},{key:'pAssign',label:'P(assign)',fmt:(o)=>'<span class="'+(pAssignSweet(o)?'num-c':'num-r')+'">'+fmtPct(o.pAssign,0)+'</span>'},
   {key:'pop',label:'POP',fmt:(o)=>fmtPct(o.pop,0)},{key:'cushion',label:'Cushion',fmt:(o)=>fmtPct(o.cushion,1)},
   {key:'ivr',label:'IV rank',fmt:(o)=> o.ivr==null?'<span class="faint">—</span>':`<span class="${o.ivr>=66?'num-y':o.ivr<=33?'num-r':''}">${o.ivr.toFixed(0)}</span>`},
   {key:'ivhv',label:'IV/HV',fmt:(o)=> o.ivhv==null?'<span class="faint">—</span>':`<span class="${o.ivhv>=1.15?'num-y':o.ivhv<1?'num-r':''}">${o.ivhv.toFixed(2)}×</span>`},
   {key:'score',label:'Composite',fmt:(o)=>'<span class="pill num-s">'+(o.score?o.score.toFixed(0):'—')+'</span>'}
 ];
 const sortVal=(cols)=>(o,key)=>{ const c=cols.find(c=>c.key===key); return c&&c.val?c.val(o):o[key]; };
+
+// "Sweet spot": P(assign) in the 20–30% target band (compared on the displayed, rounded percent).
+function pAssignSweet(o){ const p=Math.round(o.pAssign*100); return p>=20 && p<=30; }
 
 function render(){
   let cands=buildCandidates(); const sk=state.sortKey,dir=state.sortDir, sv=sortVal(PCOLS);
@@ -569,7 +573,7 @@ function render(){
     tb.innerHTML=`<tr><td colspan="${PCOLS.length}"><div class="empty">${msg}</div></td></tr>`;
     updateSummary([],null); drawPayoff(null); renderModeler(null); return; }
   let sel=cands.find(c=>c.key===state.selKey)||cands[0]; state.selKey=sel.key;
-  tb.innerHTML=cands.map(o=>`<tr data-key="${o.key}" class="${o.key===state.selKey?'sel':''}">`+
+  tb.innerHTML=cands.map(o=>`<tr data-key="${o.key}" class="${o.key===state.selKey?'sel':''}${pAssignSweet(o)?' sweet':''}">`+
     PCOLS.map((c,i)=>i===0?`<td class="tk"><span class="tosend" data-send="${o.key}" title="Send to Positions form">${o.sym}</span>${levBadge(o.sym)}<span class="exp">${o.expiry.slice(5)}</span></td>`:`<td>${c.fmt(o)}</td>`).join('')+`</tr>`).join('');
   tb.querySelectorAll('tr').forEach(tr=>tr.onclick=()=>{state.selKey=tr.dataset.key; if(state.roll.key!==tr.dataset.key)state.roll={buyback:null,credit:null,days:30,strike:null,key:null}; render();});
   tb.querySelectorAll('.tosend').forEach(el=>el.onclick=(e)=>{ e.stopPropagation(); const c=cands.find(x=>x.key===el.dataset.send); if(c) sendToPositionForm(c); });
