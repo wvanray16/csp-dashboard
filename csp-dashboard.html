@@ -718,6 +718,7 @@ function buildCalls(){
 }
 const CCOLS=[
   {key:'K',label:'Strike',fmt:(o)=>'<b>'+o.K.toFixed(2)+'</b>'+(o.belowCost?' <span class="belowbadge">&lt;cost</span>':'')},
+  {key:'be',label:'Breakeven',fmt:(o)=>o.be.toFixed(2)},
   {key:'upside',label:'Upside cap',fmt:(o)=>fmtPct(o.upside,1)},
   {key:'prem',label:'Premium',fmt:(o)=>o.prem.toFixed(2)},
   {key:'premDollar',label:'$/contract',fmt:(o)=>'<span class="num-i">$'+o.premDollar.toFixed(0)+'</span>'},
@@ -727,7 +728,6 @@ const CCOLS=[
   {key:'ifCalledAnnual',label:'If-called ann.',fmt:(o)=>'<span class="pill num-c">'+fmtPct(o.ifCalledAnnual,1)+'</span>'},
   {key:'callAwayP',label:'Call-away P',fmt:(o)=>'<span class="num-r">'+fmtPct(o.callAwayP,0)+'</span>'},
   {key:'delta',label:'Δ',fmt:(o)=>o.delta.toFixed(2)},
-  {key:'be',label:'Down BE',fmt:(o)=>o.be.toFixed(2)},
   {key:'ivhv',label:'IV/HV',fmt:(o)=> o.ivhv==null?'<span class="faint">—</span>':`<span class="${o.ivhv>=1.15?'num-y':o.ivhv<1?'num-r':''}">${o.ivhv.toFixed(2)}×</span>`},
   {key:'score',label:'Composite',fmt:(o)=>'<span class="pill num-s">'+(o.score?o.score.toFixed(0):'—')+'</span>'}
 ];
@@ -743,7 +743,7 @@ const CCOL_TIPS={
   ifCalledAnnual:'If-called annualized — the if-called return scaled to a yearly rate.',
   callAwayP:'Call-away probability — estimated chance the call finishes in-the-money and your shares get called away (assigned).',
   delta:'Delta — how much the call moves per $1 in the stock; also a rough gauge of call-away odds.',
-  be:'Downside breakeven — cost basis minus premium. The premium cushions you down to this price before the position is underwater.',
+  be:'Breakeven — your downside breakeven: cost basis minus premium. The premium cushions the stock down to this price before the position is underwater.',
   ivhv:'IV/HV — implied vs. recent historical volatility. Above 1× means options price in more movement than the stock has recently shown.',
   score:'Composite — a 0–100 blend of income, if-called yield and keeping your shares, weighted by your Composite Weighting sliders. Higher = best all-around covered call in this list.'
 };
