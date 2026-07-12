@@ -545,7 +545,7 @@ function buildCandidates(){
 }
 const PCOLS=[
   {key:'sym',label:'Ticker'},{key:'S',label:'Spot',fmt:(o)=>o.S.toFixed(2)},{key:'dte',label:'DTE',fmt:(o)=>o.dte},
-  {key:'K',label:'Strike',fmt:(o)=>'<b>'+o.K.toFixed(2)+'</b>'},{key:'otm',label:'% OTM',fmt:(o)=>fmtPct((o.S-o.K)/o.S,1),val:(o)=>(o.S-o.K)/o.S},
+  {key:'K',label:'Strike',fmt:(o)=>'<b>'+o.K.toFixed(2)+'</b>'},{key:'be',label:'Breakeven',fmt:(o)=>o.be.toFixed(2)},{key:'otm',label:'% OTM',fmt:(o)=>fmtPct((o.S-o.K)/o.S,1),val:(o)=>(o.S-o.K)/o.S},
   {key:'er',label:'Earnings',fmt:(o)=>o.er?(o.throughER?`<span class="erbadge">⚠ ${o.er.slice(5)}</span>`:`<span class="erclear">${o.er.slice(5)}</span>`):'<span class="faint">—</span>',val:(o)=>o.throughER?1:0},
   {key:'prem',label:'Premium',fmt:(o)=>o.prem.toFixed(2)},{key:'premDollar',label:'$/contract',fmt:(o)=>'<span class="num-i">$'+o.premDollar.toFixed(0)+'</span>'},
   {key:'cap',label:'Capital',fmt:(o)=>fmtMoney(o.cap)},{key:'staticRet',label:'Static',fmt:(o)=>fmtPct(o.staticRet,2)},
@@ -562,6 +562,7 @@ const PCOL_TIPS={
   S:'Spot — the current price of the underlying stock or ETF.',
   dte:'DTE — days until this option expires.',
   K:'Strike — the price you agree to buy the shares at if the put is assigned.',
+  be:'Breakeven — the price where this trade breaks even at expiration: strike − premium. Below this you begin to lose money.',
   otm:'% OTM — how far the strike sits below the current price (spot → strike).',
   er:'Next earnings date. ⚠ means earnings fall before this expiration (extra risk); blank means none / unknown.',
   prem:'Premium — the credit per share you collect for selling this put.',
