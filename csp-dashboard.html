@@ -110,6 +110,8 @@
   .sig .head .ttl{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
   .sig .head .who{font-family:var(--display);font-weight:600;font-size:15px}
   .sig .head .who small{color:var(--faint);font-weight:400;font-family:var(--mono);font-size:11px}
+  .tvbox{height:340px;margin-top:10px;border-radius:8px;overflow:hidden;background:var(--bg)}
+  .tvempty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--faint);font-size:12px}
   .sig svg{width:100%;height:188px;display:block}
   .chips-metric{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
   .mchip{flex:1 1 0;min-width:78px;background:var(--panel-2);border:1px solid var(--border-soft);border-radius:8px;padding:8px 10px}
@@ -279,6 +281,11 @@
       </div>
     </section>
 
+    <section class="sig" style="margin-bottom:16px">
+      <div class="head"><span class="ttl">Price · 3-month daily</span><span class="who" id="tvWho">—</span></div>
+      <div class="tvbox" id="tvChart"></div>
+    </section>
+
     <section class="modeler">
       <div class="lab">Outcome modeler — <b id="modWho">select a contract</b></div>
       <div class="scen"><div class="scenbox" id="scenWin"></div><div class="scenbox" id="scenAssign"></div><div class="scenbox" id="scenRoll"></div></div>
@@ -411,6 +418,8 @@
   </div>
 </div>
 
+<!-- TradingView's free charting widget library (loaded before our script so it's ready to use). -->
+<script src="https://s3.tradingview.com/tv.js"></script>
 <script>
 /* ============================ DEMO DATA ============================ */
 /* puts/calls: [strike, bid, ask, iv, openInterest] — real COHR & AMD, 2026-07-31 */
@@ -582,7 +591,25 @@ const sortVal=(cols)=>(o,key)=>{ const c=cols.find(c=>c.key===key); return c&&c.
 // "Sweet spot": P(assign) in the 20–30% target band (compared on the displayed, rounded percent).
 function pAssignSweet(o){ const p=Math.round(o.pAssign*100); return p>=20 && p<=30; }
 
+/* ---- 3-month daily price chart (TradingView's free embed widget) ----
+   Rebuilt only when the selected ticker actually changes, so it never flickers or
+   reloads while filters/sliders are being adjusted. */
+let tvSym='__init__';
+function renderTVChart(sym){
+  const box=document.getElementById('tvChart'), who=document.getElementById('tvWho');
+  if(!box) return;
+  if(!sym){ if(tvSym!==null){ box.innerHTML='<div class="tvempty">Select a ticker to see its 3-month daily chart.</div>'; who.textContent='—'; tvSym=null; } return; }
+  if(sym===tvSym) return;
+  tvSym=sym; who.textContent=sym;
+  if(typeof TradingView==='undefined'){ box.innerHTML='<div class="tvempty">Chart unavailable — TradingView could not be reached.</div>'; return; }
+  box.innerHTML='';
+  new TradingView.widget({ container_id:'tvChart', symbol:sym, interval:'D', range:'3M',
+    theme:'dark', style:'1', locale:'en', autosize:true, timezone:'America/New_York',
+    hide_side_toolbar:true, allow_symbol_change:false, save_image:false, withdateranges:false });
+}
+
 function render(){
+  renderTVChart(state.hoverSym);
   let cands=buildCandidates(); const sk=state.sortKey,dir=state.sortDir, sv=sortVal(PCOLS);
   cands.sort((a,b)=> sk==='sym'?(a.sym<b.sym?-1:a.sym>b.sym?1:0)*dir:((sv(a,sk)??0)-(sv(b,sk)??0))*dir);
   const thead=document.getElementById('thead');
