@@ -992,6 +992,30 @@ function pAssignFor(p){
 }
 const POSCOLS=['Pos','Strike','Exp','DTE','Premium/ct','Qty','Capital','Mark','Unreal P&L','% capt.','P(assign)','Status','','',''];
 const HOLDCOLS=['Ticker','Shares','Cost basis','Price','Unreal P&L','','',''];
+// Header tooltips, keyed by label (these two tables use plain string columns). Kept separate
+// because "Unreal P&L" means the contract's P&L in one table and the shares' P&L in the other.
+const POS_TIPS={
+  'Pos':'The ticker, and whether you sold a PUT or a CALL.',
+  'Strike':'The strike you sold. For a put, the price you would buy the shares at if assigned; for a call, the price your shares would be sold at.',
+  'Exp':'Expiration date of the contract.',
+  'DTE':'Days to expiry — days left until this contract expires.',
+  'Premium/ct':'The credit you collected per contract when you opened it (premium per share × 100).',
+  'Capital':'Cash secured as collateral for a short put (strike × 100 × contracts). Covered calls show a dash because your shares are the collateral, not cash.',
+  'Qty':'Number of contracts.',
+  'Mark':'Current mid price of the contract — roughly what it would cost to buy it back now. Shows a dash unless the Put Screen has this expiry loaded.',
+  'Unreal P&L':'Unrealised profit or loss if you closed right now: (credit collected − current mark) × 100 × contracts.',
+  '% capt.':'How much of the original premium you have captured so far. Near 100% means the contract is nearly worthless and most of the profit is already banked — often a good time to close early.',
+  'P(assign)':'Live chance this contract finishes in the money and gets assigned. Recalculated from the current price, this contract\'s implied volatility and the days remaining — so it falls as expiry nears while you stay out of the money, and rises if the stock moves against you. Shown in red at 50% or higher.',
+  'Status':'Whether the contract is currently in the money (ITM — assignment likely) or out of the money (OTM — on track to expire worthless).'
+};
+const HOLD_TIPS={
+  'Ticker':'The stock you own — usually shares you received when a short put was assigned.',
+  'Shares':'Number of shares held.',
+  'Cost basis':'Your effective entry price per share. After a put assignment this is the strike minus the premium you collected, which is why it sits below the strike you sold.',
+  'Price':'Current market price per share.',
+  'Unreal P&L':'Unrealised profit or loss on the shares: (current price − cost basis) × shares.'
+};
+const thTip=(tips)=>(c)=>`<th${tips[c]?` title="${tips[c]}"`:''}>${c}</th>`;   // blank action columns get no tooltip
 function renderPositions(){
   document.getElementById('posCount').textContent=state.positions.length+state.holdings.length;
   document.getElementById('pCount').textContent=state.positions.length;
@@ -1010,7 +1034,7 @@ function renderPositions(){
   document.getElementById('pPnlNote').textContent=anyMark?`${fmtMoney(optPnl)} options · ${fmtMoney(sharePnl)} shares`:'options + shares';
 
   // options table
-  const th=document.getElementById('pthead'); th.innerHTML=POSCOLS.map(c=>`<th>${c}</th>`).join('');
+  const th=document.getElementById('pthead'); th.innerHTML=POSCOLS.map(thTip(POS_TIPS)).join('');
   const tb=document.getElementById('ptbody');
   if(!state.positions.length){ tb.innerHTML=`<tr><td colspan="${POSCOLS.length}"><div class="empty"><b>No open options.</b><div class="small">Log one above, or use “+ Track” on either screener.</div></div></td></tr>`; }
   else tb.innerHTML=state.positions.map((p,i)=>{
@@ -1039,7 +1063,7 @@ function renderPositions(){
   tb.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closePosition(+b.dataset.close));
 
   // holdings table
-  const hh=document.getElementById('hthead'); hh.innerHTML=HOLDCOLS.map(c=>`<th>${c}</th>`).join('');
+  const hh=document.getElementById('hthead'); hh.innerHTML=HOLDCOLS.map(thTip(HOLD_TIPS)).join('');
   const hb=document.getElementById('htbody');
   if(!state.holdings.length){ hb.innerHTML=`<tr><td colspan="${HOLDCOLS.length}"><div class="empty"><b>No assigned shares.</b><div class="small">When a short put is assigned, hit “assign” above to track the stock here.</div></div></td></tr>`; }
   else hb.innerHTML=state.holdings.map((h,i)=>{
