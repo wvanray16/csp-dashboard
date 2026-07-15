@@ -483,11 +483,14 @@ function seedDemo(){
 seedDemo();
 
 /* ============================ PERSISTENCE ============================ */
-const PKEY='csp_positions_v2', HKEY='csp_holdings_v1', RKEY='csp_realized_v1';
+const PKEY='csp_positions_v2', HKEY='csp_holdings_v1', RKEY='csp_realized_v1', WKEY='csp_watch_v1';
 function loadStore(){ try{ state.positions=JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ state.positions=[]; }
   try{ state.holdings=JSON.parse(localStorage.getItem(HKEY))||[]; }catch(e){ state.holdings=[]; }
   try{ state.realized=JSON.parse(localStorage.getItem(RKEY))||[]; }catch(e){ state.realized=[]; }
+  // Watchlist survives refreshes; only the tickers are stored — their live data is re-fetched on load.
+  try{ const w=JSON.parse(localStorage.getItem(WKEY)); if(Array.isArray(w)) state.watch=w.filter(s=>typeof s==='string'&&s); }catch(e){}
   state.positions.forEach(p=>{ if(!p.type) p.type='put'; }); }
+function saveWatch(){ try{ localStorage.setItem(WKEY,JSON.stringify(state.watch)); }catch(e){} }
 function savePos(){ try{ localStorage.setItem(PKEY,JSON.stringify(state.positions)); }catch(e){} }
 function saveHold(){ try{ localStorage.setItem(HKEY,JSON.stringify(state.holdings)); }catch(e){} }
 function saveRealized(){ try{ localStorage.setItem(RKEY,JSON.stringify(state.realized)); }catch(e){} }
@@ -1104,7 +1107,7 @@ function renderChips(){
   el.innerHTML=state.watch.map(s=>{const has=state.chains[s]&&state.chains[s].puts;const er=state.earnings[s];
     return `<span class="chip ${has?'has-data':''} ${passesUniv(s)?'':'dim'} ${s===state.hoverSym?'active':''}" data-chip="${s}">${s}${levBadge(s)}${er?`<span class="er">ER ${er.slice(5)}</span>`:''}<span class="x" data-sym="${s}">×</span></span>`;}).join('')
     +`<input class="chip-add" id="addTick" placeholder="+ ADD" maxlength="6" />`;
-  el.querySelectorAll('.x').forEach(x=>x.onclick=(e)=>{e.stopPropagation();const sym=x.dataset.sym;state.watch=state.watch.filter(s=>s!==sym);
+  el.querySelectorAll('.x').forEach(x=>x.onclick=(e)=>{e.stopPropagation();const sym=x.dataset.sym;state.watch=state.watch.filter(s=>s!==sym);saveWatch();
     if(state.hoverSym===sym) state.hoverSym=null; renderChips();render();});
   const activate=(sym)=>{ if(!passesUniv(sym)||state.hoverSym===sym) return; state.hoverSym=sym;
     el.querySelectorAll('[data-chip]').forEach(c=>c.classList.toggle('active', c.dataset.chip===sym)); render(); };
@@ -1121,7 +1124,7 @@ async function addTicker(sym){
   if(!/^[A-Z0-9.\-^]{1,10}$/.test(sym)){ setLiveHint(`⚠ "${sym}" isn't a valid ticker symbol.`,true); return false; }
   if(state.watch.includes(sym)){ setLiveHint(`${sym} is already on your list.`,false); state.hoverSym=sym; renderChips(); render(); return false; }
   if(state.mode!=='live'){
-    state.watch.push(sym); if(DEMO.underlyings[sym]) state.hoverSym=sym; renderChips(); render();
+    state.watch.push(sym); saveWatch(); if(DEMO.underlyings[sym]) state.hoverSym=sym; renderChips(); render();
     setLiveHint(DEMO.underlyings[sym]?`${sym} added from the demo snapshot.`:`${sym} added — switch to Live for real market data.`, !DEMO.underlyings[sym]);
     return true;
   }
@@ -1130,7 +1133,7 @@ async function addTicker(sym){
   const ok=await fetchSymbol(sym);
   if(!ok) return false;                                 // fetchSymbol already surfaced the error
   const first=state.watch.length===0;
-  state.watch.push(sym);
+  state.watch.push(sym); saveWatch();
   if(first && state.chains[sym] && state.chains[sym].expiry) state.expiry=state.chains[sym].expiry;
   await fetchEarnings(sym); await fetchHistory(sym);
   state.hoverSym=sym;
@@ -1174,8 +1177,11 @@ async function fetchHistory(sym){
     return true; }catch(e){ return false; }
 }
 async function refreshLive(){
+  if(!state.watch.length){ setLiveHint('Enter a ticker above and press Enter to pull its live options data.',false); return; }
   setLiveHint('Fetching…',false); let ok=0;
-  for(const s of state.watch){ const a=await fetchSymbol(s); await fetchEarnings(s); await fetchHistory(s); if(a) ok++; }
+  for(const s of state.watch){ const a=await fetchSymbol(s); await fetchEarnings(s); await fetchHistory(s); if(a) ok++;
+    // With no expiry set (e.g. straight after a page reload), adopt the nearest real one from the first hit.
+    if(!state.expiry && state.chains[s] && state.chains[s].expiry) state.expiry=state.chains[s].expiry; }
   state.asOf=new Date().toLocaleString();
   if(ok) setLiveHint(`Pulled ${ok}/${state.watch.length} symbols (puts, calls, earnings, IV/HV).`,false);
   syncExpiryOptions(); renderChips(); render(); renderCalls(); renderPositions(); renderHistory(); updateStatus();
@@ -1276,14 +1282,20 @@ function bind(){
 }
 
 /* ============================ INIT ============================ */
-loadStore(); bind(); renderChips(); syncExpiryOptions(); updateStatus(); render(); renderCalls(); renderPositions(); renderHistory();
+loadStore(); seedDemo(); bind(); renderChips(); syncExpiryOptions(); updateStatus(); render(); renderCalls(); renderPositions(); renderHistory();
 // Reflect the resolved backend (same-origin when hosted) in the connect field.
 document.getElementById('backend').value = state.backend;
 // When served from a real host (not opened as a local file), start in Live mode ready for input.
 if(location.protocol!=='file:' && !/^https?:\/\/localhost/.test(state.backend)){
   setMode('live');
-  setLiveHint('Enter a ticker above and press Enter to pull its live options data.',false);
-  const mt=document.getElementById('addTickerMain'); if(mt) mt.focus();
+  if(state.watch.length){
+    // Saved watchlist: only the tickers persist, so pull their live data back down.
+    state.expiry='';                       // let the server pick the nearest expiry rather than a stale one
+    refreshLive();
+  } else {
+    setLiveHint('Enter a ticker above and press Enter to pull its live options data.',false);
+    const mt=document.getElementById('addTickerMain'); if(mt) mt.focus();
+  }
 }
 </script>
 </body>
