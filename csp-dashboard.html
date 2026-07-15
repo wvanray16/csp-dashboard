@@ -605,7 +605,12 @@ function renderTVChart(sym){
   box.innerHTML='';
   new TradingView.widget({ container_id:'tvChart', symbol:sym, interval:'D', range:'3M',
     theme:'dark', style:'1', locale:'en', autosize:true, timezone:'America/New_York',
-    hide_side_toolbar:true, allow_symbol_change:false, save_image:false, withdateranges:false });
+    hide_side_toolbar:true, allow_symbol_change:false, save_image:false, withdateranges:false,
+    // Default overlays on every chart: 9 EMA (purple) and 20 EMA (yellow).
+    studies:[
+      {id:'MAExp@tv-basicstudies', inputs:{length:9},  overrides:{'plot.color':'#B98CE0','plot.linewidth':2}},
+      {id:'MAExp@tv-basicstudies', inputs:{length:20}, overrides:{'plot.color':'#F2C94C','plot.linewidth':2}}
+    ] });
 }
 
 function render(){
