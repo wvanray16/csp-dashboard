@@ -352,6 +352,11 @@
       </div>
     </section>
 
+    <section class="sig" style="margin-bottom:16px">
+      <div class="head"><span class="ttl">Price · 3-month daily</span><span class="who" id="ccChartWho">—</span></div>
+      <div class="tvbox" id="ccChart"></div>
+    </section>
+
     <div class="rankbar"><span class="lab">Rank by</span>
       <button class="rk acc-call on" data-rank="ifcalled">If-called return</button>
       <button class="rk acc-call" data-rank="income">Income yield</button>
@@ -599,8 +604,8 @@ const EMA_FAST_COLOR='#B98CE0', EMA_SLOW_COLOR='#F2C94C'; // purple / yellow
 // Standard EMA: seeded with the first close, then smoothed with k = 2/(len+1).
 function emaSeries(vals,len){ const k=2/(len+1); let prev=null; return vals.map(v=>{ prev = prev==null ? v : v*k+prev*(1-k); return prev; }); }
 
-function renderPriceChart(sym){
-  const box=document.getElementById('tvChart'), who=document.getElementById('tvWho');
+function renderPriceChart(sym, boxId='tvChart', whoId='tvWho'){
+  const box=document.getElementById(boxId), who=document.getElementById(whoId);
   if(!box) return;
   if(!sym){ box.innerHTML='<div class="tvempty">Select a ticker to see its 3-month daily chart.</div>'; who.textContent='—'; return; }
   who.textContent=sym;
@@ -646,31 +651,32 @@ function renderPriceChart(sym){
 
   // Crosshair overlay: drawn once, then only its attributes are updated on mousemove
   // (never a full redraw), so tracking stays smooth. #xhCatch captures the pointer.
-  const xh=`<g id="xhair" style="display:none" pointer-events="none">`
-    +`<line id="xhV" y1="${padT}" y2="${padT+ph}" stroke="#8b98a9" stroke-width="1" stroke-dasharray="3 3"/>`
-    +`<line id="xhH" x1="${padL}" x2="${padL+pw}" stroke="#8b98a9" stroke-width="1" stroke-dasharray="3 3"/>`
-    +`<rect id="xhPB" width="50" height="15" rx="3" fill="#5B8DEF"/>`
-    +`<text id="xhPT" font-size="10" fill="#fff" font-family="ui-monospace,monospace" text-anchor="middle"></text>`
-    +`<rect id="xhDB" height="14" rx="3" fill="#2a3240"/>`
-    +`<text id="xhDT" font-size="10" fill="#e6edf3" font-family="ui-monospace,monospace" text-anchor="middle"></text>`
-    +`<text id="xhInfo" x="${padL+150}" y="${padT+10.5}" font-size="10" font-family="ui-monospace,monospace"></text>`
-    +`</g><rect id="xhCatch" x="${padL}" y="${padT}" width="${pw}" height="${ph}" fill="transparent"/>`;
+  const xh=`<g class="xh-g" style="display:none" pointer-events="none">`
+    +`<line class="xh-v" y1="${padT}" y2="${padT+ph}" stroke="#8b98a9" stroke-width="1" stroke-dasharray="3 3"/>`
+    +`<line class="xh-h" x1="${padL}" x2="${padL+pw}" stroke="#8b98a9" stroke-width="1" stroke-dasharray="3 3"/>`
+    +`<rect class="xh-pb" width="50" height="15" rx="3" fill="#5B8DEF"/>`
+    +`<text class="xh-pt" font-size="10" fill="#fff" font-family="ui-monospace,monospace" text-anchor="middle"></text>`
+    +`<rect class="xh-db" height="14" rx="3" fill="#2a3240"/>`
+    +`<text class="xh-dt" font-size="10" fill="#e6edf3" font-family="ui-monospace,monospace" text-anchor="middle"></text>`
+    +`<text class="xh-info" x="${padL+150}" y="${padT+10.5}" font-size="10" font-family="ui-monospace,monospace"></text>`
+    +`</g><rect x="${padL}" y="${padT}" width="${pw}" height="${ph}" fill="transparent"/>`;
 
   box.innerHTML=`<svg width="100%" height="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}${candles}${emas}${dates}${legend}${xh}</svg>`;
 
-  // Geometry the crosshair needs to map pixels back to prices/dates.
-  _chart={ bars, fF, fS, W, H, padL, padT, pw, ph, lo, hi, bw, n };
-  attachCrosshair(box.querySelector('svg'));
+  // Geometry the crosshair needs to map pixels back to prices/dates, kept per chart
+  // so the screener and covered-calls charts stay independent.
+  _charts[boxId]={ bars, fF, fS, W, H, padL, padT, pw, ph, lo, hi, bw, n };
+  attachCrosshair(box.querySelector('svg'), boxId);
 }
 
-let _chart=null;
-function attachCrosshair(svg){
+const _charts={};
+function attachCrosshair(svg, boxId){
   if(!svg) return;
-  const g=svg.querySelector('#xhair'), info=svg.querySelector('#xhInfo');
+  const g=svg.querySelector('.xh-g'), info=svg.querySelector('.xh-info');
   const hide=()=>{ g.style.display='none'; info.innerHTML=''; };
   svg.addEventListener('mouseleave',hide);
   svg.addEventListener('mousemove',(e)=>{
-    const c=_chart; if(!c) return;
+    const c=_charts[boxId]; if(!c) return;
     // getScreenCTM handles any CSS scaling of the SVG, so this stays accurate at any width.
     const m=svg.getScreenCTM(); if(!m) return;
     const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
@@ -680,13 +686,13 @@ function attachCrosshair(svg){
     const i=Math.max(0,Math.min(c.n-1,Math.round((p.x-c.padL-c.bw/2)/c.bw)));   // snap to nearest candle
     const bx=c.padL+i*c.bw+c.bw/2;
     const price=c.lo+(c.hi-c.lo)*(1-(p.y-c.padT)/c.ph);
-    const b=c.bars[i], set=(id,a)=>{ const el=svg.querySelector(id); for(const k in a) el.setAttribute(k,a[k]); };
-    set('#xhV',{x1:bx,x2:bx}); set('#xhH',{y1:p.y,y2:p.y});
-    set('#xhPB',{x:c.padL+c.pw+2, y:p.y-7.5});
-    set('#xhPT',{x:c.padL+c.pw+27, y:p.y+3}); svg.querySelector('#xhPT').textContent=price.toFixed(2);
+    const b=c.bars[i], set=(sel,a)=>{ const el=svg.querySelector(sel); for(const k in a) el.setAttribute(k,a[k]); };
+    set('.xh-v',{x1:bx,x2:bx}); set('.xh-h',{y1:p.y,y2:p.y});
+    set('.xh-pb',{x:c.padL+c.pw+2, y:p.y-7.5});
+    set('.xh-pt',{x:c.padL+c.pw+27, y:p.y+3}); svg.querySelector('.xh-pt').textContent=price.toFixed(2);
     const lab=(b.date||'').slice(5), wd=lab.length*6.2+10;
-    set('#xhDB',{x:bx-wd/2, y:c.H-16, width:wd});
-    set('#xhDT',{x:bx, y:c.H-5.5}); svg.querySelector('#xhDT').textContent=lab;
+    set('.xh-db',{x:bx-wd/2, y:c.H-16, width:wd});
+    set('.xh-dt',{x:bx, y:c.H-5.5}); svg.querySelector('.xh-dt').textContent=lab;
     const col=b.close>=b.open?'#3FB68B':'#E5687A', d='#8b98a9';
     info.innerHTML=`<tspan fill="${d}">${b.date}</tspan>`
       +`<tspan fill="${d}">  O </tspan><tspan fill="${col}">${b.open.toFixed(2)}</tspan>`
@@ -698,7 +704,10 @@ function attachCrosshair(svg){
   });
 }
 let _chartResize;
-window.addEventListener('resize',()=>{ clearTimeout(_chartResize); _chartResize=setTimeout(()=>renderPriceChart(state.hoverSym),200); });
+window.addEventListener('resize',()=>{ clearTimeout(_chartResize); _chartResize=setTimeout(()=>{
+  renderPriceChart(state.hoverSym);
+  renderPriceChart(ccCtx().sym,'ccChart','ccChartWho');
+},200); });
 
 function render(){
   renderPriceChart(state.hoverSym);
@@ -873,6 +882,7 @@ function renderCalls(){
   // default cost basis to spot if empty
   const ch=state.chains[ctx.sym];
   if(state.cc.holdingIdx<0 && (state.cc.cost==null) && ch){ state.cc.cost=Math.round(ch.spot); document.getElementById('ccCost').value=state.cc.cost; }
+  renderPriceChart(ctx.sym,'ccChart','ccChartWho');
   const {rows}=buildCalls();
   const sk=state.cc.sortKey,dir=state.cc.sortDir,sv=sortVal(CCOLS);
   rows.sort((a,b)=>((sv(a,sk)??0)-(sv(b,sk)??0))*dir);
