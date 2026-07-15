@@ -176,8 +176,11 @@ app.get("/history", async (req, res) => {
     const start = new Date(Date.now() - 420 * 86400000).toISOString().slice(0, 10);
     const end = new Date().toISOString().slice(0, 10);
     const j = await tradier("/markets/history", { symbol, interval: "daily", start, end });
-    const closes = arr(j?.history?.day).map(d => num(d.close)).filter(c => c > 0);
-    res.json({ symbol, closes });
+    // Full daily OHLC powers the candlestick chart; `closes` stays for the IV/HV stats.
+    const bars = arr(j?.history?.day)
+      .map(d => ({ date: String(d.date), open: num(d.open), high: num(d.high), low: num(d.low), close: num(d.close) }))
+      .filter(b => b.close > 0);
+    res.json({ symbol, closes: bars.map(b => b.close), bars });
   } catch (err) { console.error("[/history]", err.message); res.status(500).json({ error: err.message }); }
 });
 
