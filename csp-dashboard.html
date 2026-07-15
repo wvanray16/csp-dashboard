@@ -467,7 +467,7 @@ const state = {
   watch:[], chains:{}, earnings:{}, expiry:DEMO.expiry, asOf:DEMO.asOf,
   basis:'mid', erFilter:'all', univFilter:'all', hoverSym:null, rankBy:'annual', sortKey:'annual', sortDir:-1, selKey:null,
   w:{yield:40,prem:20,safe:40}, roll:{buyback:null,credit:null,days:30,strike:null,key:null},
-  positions:[], holdings:[], realized:[], volstats:{}, meta:{}, bars:{},
+  positions:[], holdings:[], realized:[], volstats:{}, meta:{}, bars:{}, posChains:{},
   cc:{ holdingIdx:-1, sym:null, cost:null, shares:100, basis:'mid', below:'show',
        rankBy:'ifcalled', sortKey:'ifCalledAnnual', sortDir:-1, selKey:null, w:{inc:30,called:40,keep:30} }
 };
@@ -953,7 +953,44 @@ function syncCcSyms(){
 function markFor(pos){ const ch=state.chains[pos.sym]; if(!ch||ch.expiry!==pos.exp) return null;
   const arr=pos.type==='call'?ch.calls:ch.puts; if(!arr) return null;
   const row=arr.find(p=>Math.abs(p[0]-pos.strike)<1e-6); if(!row) return null; return (row[1]+row[2])/2; }
-const POSCOLS=['Pos','Strike','Exp','DTE','Premium/ct','Qty','Capital','Mark','Unreal P&L','% capt.','Status','','',''];
+/* ---- Live P(assign) for open positions ----
+   The screener only holds one expiry per ticker, which usually isn't the expiry a position
+   was opened at. So we pull the chain for each position's OWN expiry (a handful of calls,
+   cached) and read that contract's real implied vol — using another expiry's ATM IV would
+   understate assignment odds on OTM puts because of skew. */
+const posKey=(p)=>p.sym+'|'+p.exp;
+const _posFetching=new Set();
+async function ensurePosChains(){
+  if(state.mode!=='live') return;
+  // `k in posChains` marks "already attempted" — a null value means it failed, so we don't retry forever.
+  const todo=[...new Set(state.positions.map(posKey))].filter(k=>!(k in state.posChains) && !_posFetching.has(k));
+  if(!todo.length) return;
+  todo.forEach(k=>_posFetching.add(k));
+  const base=state.backend.replace(/\/$/,''); let got=0;
+  for(const k of todo){
+    const [sym,exp]=k.split('|');
+    try{
+      const r=await fetch(`${base}/options?symbol=${encodeURIComponent(sym)}&date=${encodeURIComponent(exp)}`);
+      const j=r.ok?await r.json():null;
+      // The server falls back to the nearest expiry if ours is invalid — only accept an exact match.
+      if(j && j.expiration===exp){
+        const mp=(a)=>(a||[]).map(o=>[o.strike,o.bid??0,o.ask??0,o.impliedVolatility??0,o.openInterest??0]).filter(x=>x[0]);
+        state.posChains[k]={ spot:j.underlyingPrice??0, puts:mp(j.puts), calls:mp(j.calls) }; got++;
+      } else state.posChains[k]=null;
+    }catch(e){ state.posChains[k]=null; }
+    _posFetching.delete(k);
+  }
+  if(got) renderPositions();
+}
+// Probability the contract finishes in the money, from its own IV and today's spot/DTE.
+function pAssignFor(p){
+  const pc=state.posChains[posKey(p)]; if(!pc||!pc.spot) return null;
+  const arr=p.type==='call'?pc.calls:pc.puts;
+  const row=(arr||[]).find(x=>Math.abs(x[0]-p.strike)<1e-6); if(!row||!(row[3]>0)) return null;
+  const T=Math.max(0,dteFrom(p.exp))/365, g=greeks(pc.spot,p.strike,T,num('rate')/100,row[3]);
+  return p.type==='call'?g.callITM:g.putITM;
+}
+const POSCOLS=['Pos','Strike','Exp','DTE','Premium/ct','Qty','Capital','Mark','Unreal P&L','% capt.','P(assign)','Status','','',''];
 const HOLDCOLS=['Ticker','Shares','Cost basis','Price','Unreal P&L','','',''];
 function renderPositions(){
   document.getElementById('posCount').textContent=state.positions.length+state.holdings.length;
@@ -979,6 +1016,9 @@ function renderPositions(){
   else tb.innerHTML=state.positions.map((p,i)=>{
     const dte=dteFrom(p.exp), m=markFor(p), ch=state.chains[p.sym];
     const upnl=m!=null?(p.credit-m)*100*p.qty:null, capt=m!=null?(p.credit-m)/p.credit:null;
+    const pa=pAssignFor(p);
+    const paCell = pa==null ? '<span class="faint">—</span>'
+      : `<span class="${pa>=0.5?'neg':''}" title="Chance this contract finishes in the money and is assigned — recalculated from the live spot, this contract's implied volatility and ${dte} day${dte===1?'':'s'} left.">${fmtPct(pa,0)}</span>`;
     const itm = ch&&ch.spot ? (p.type==='call'?ch.spot>p.strike:ch.spot<p.strike) : null;
     const status= itm===null?'<span class="faint">—</span>':(itm?'<span class="neg">ITM</span>':'<span class="pos">OTM</span>');
     const assignBtn = p.type==='put' ? `<span class="btn sm" data-assign="${i}" style="padding:2px 8px">assign</span>` : '';
@@ -989,6 +1029,7 @@ function renderPositions(){
       <td>${m!=null?m.toFixed(2):'<span class="faint">—</span>'}</td>
       <td class="${upnl==null?'':upnl>=0?'pos':'neg'}">${upnl!=null?fmtMoney(upnl):'<span class="faint">—</span>'}</td>
       <td>${capt!=null?fmtPct(capt,0):'<span class="faint">—</span>'}</td>
+      <td>${paCell}</td>
       <td>${status}</td><td>${assignBtn}</td>
       <td><span class="btn sm" data-close="${i}" style="padding:2px 8px">close</span></td>
       <td><span class="btn sm" data-del="${i}" style="padding:2px 8px">✕</span></td></tr>`;
@@ -1014,6 +1055,8 @@ function renderPositions(){
   hb.querySelectorAll('[data-hdel]').forEach(b=>b.onclick=()=>{state.holdings.splice(+b.dataset.hdel,1);saveHold();renderPositions();});
   hb.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>{ state.cc.holdingIdx=+b.dataset.sell; setView('calls'); });
   hb.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeHolding(+b.dataset.close));
+
+  ensurePosChains();   // pulls any missing position-expiry chains, then re-renders once they land
 }
 function assignPut(i){
   const p=state.positions[i]; if(!p) return;
@@ -1177,7 +1220,8 @@ async function fetchHistory(sym){
     return true; }catch(e){ return false; }
 }
 async function refreshLive(){
-  if(!state.watch.length){ setLiveHint('Enter a ticker above and press Enter to pull its live options data.',false); return; }
+  state.posChains={};                    // drop cached position chains so P(assign) refreshes too
+  if(!state.watch.length){ setLiveHint('Enter a ticker above and press Enter to pull its live options data.',false); renderPositions(); return; }
   setLiveHint('Fetching…',false); let ok=0;
   for(const s of state.watch){ const a=await fetchSymbol(s); await fetchEarnings(s); await fetchHistory(s); if(a) ok++;
     // With no expiry set (e.g. straight after a page reload), adopt the nearest real one from the first hit.
