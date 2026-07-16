@@ -172,14 +172,49 @@ const FINNHUB_TOKEN = process.env.FINNHUB_TOKEN || "";
 const EARNINGS_TTL_MS = 6 * 60 * 60 * 1000;              // earnings dates barely move
 let _earn = { at: 0, map: null, inflight: null };
 
-async function fetchEarningsCalendar() {
-  const from = new Date().toISOString().slice(0, 10);
-  const to = new Date(Date.now() + 120 * 86400000).toISOString().slice(0, 10);
+const EARNINGS_DAYS = 90;                                // horizon we care about (CSP expiries sit well inside this)
+const CHUNK_DAYS = 7;                                    // small enough to survive Finnhub's row cap
+const dstr = (d) => d.toISOString().slice(0, 10);
+const addDays = (iso, n) => dstr(new Date(Date.parse(iso) + n * 86400000));
+
+async function finnhubCalendar(from, to) {
   const r = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${FINNHUB_TOKEN}`);
   if (!r.ok) throw new Error(`Finnhub ${r.status} ${r.statusText}`);
   const j = await r.json();
+  return Array.isArray(j.earningsCalendar) ? j.earningsCalendar : [];
+}
+
+/* Finnhub caps each response at roughly 1500 rows and fills it from the LATEST date
+   backwards, silently dropping the oldest days — no error, no flag. In peak earnings season
+   that cap is spent in about a week, so a wide window returns only its final few days.
+   We therefore pull in small windows, and if one still comes back truncated (its earliest
+   row is later than we asked for) we split it in half and retry. */
+async function fetchRange(from, to, depth = 0) {
+  const rows = await finnhubCalendar(from, to);
+  if (rows.length && depth < 5) {
+    let min = "9999-12-31";
+    for (const e of rows) if (e.date && e.date < min) min = e.date;
+    if (min > from) {                                    // truncated — the oldest days got dropped
+      const mid = addDays(from, Math.floor((Date.parse(to) - Date.parse(from)) / 86400000 / 2));
+      if (mid > from && mid < to) {
+        const older = await fetchRange(from, mid, depth + 1);
+        const newer = await fetchRange(addDays(mid, 1), to, depth + 1);
+        return older.concat(newer);
+      }
+    }
+  }
+  return rows;
+}
+
+async function fetchEarningsCalendar() {
+  const start = dstr(new Date()), end = addDays(dstr(new Date()), EARNINGS_DAYS);
+  const rows = [];
+  for (let f = start; f < end; f = addDays(f, CHUNK_DAYS)) {
+    const t = addDays(f, CHUNK_DAYS - 1) > end ? end : addDays(f, CHUNK_DAYS - 1);
+    rows.push(...await fetchRange(f, t));
+  }
   const map = {};
-  for (const e of (j.earningsCalendar || [])) {
+  for (const e of rows) {
     const s = String(e.symbol || "").toUpperCase(), d = String(e.date || "");
     if (!s || !d) continue;
     if (!map[s] || d < map[s]) map[s] = d;               // keep each symbol's SOONEST upcoming date
