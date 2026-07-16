@@ -454,7 +454,7 @@ const state = {
   watch:[], chains:{}, earnings:{}, expiry:DEMO.expiry, asOf:DEMO.asOf,
   basis:'mid', erFilter:'all', univFilter:'all', hoverSym:null, rankBy:'annual', sortKey:'annual', sortDir:-1, selKey:null,
   w:{yield:40,prem:20,safe:40}, roll:{buyback:null,credit:null,days:30,strike:null,key:null},
-  positions:[], holdings:[], realized:[], volstats:{}, meta:{}, posChains:{},
+  positions:[], holdings:[], realized:[], volstats:{}, meta:{}, posChains:{}, trend:{},
   cc:{ holdingIdx:-1, sym:null, cost:null, shares:100, basis:'mid', below:'show',
        rankBy:'ifcalled', sortKey:'ifCalledAnnual', sortDir:-1, selKey:null, w:{inc:30,called:40,keep:30} }
 };
@@ -498,6 +498,14 @@ function hvFromCloses(closes){ const c=(closes||[]).filter(x=>x>0); if(c.length<
   if(!series.length) return null; const recent=series.slice(-252);
   return { hv30:series[series.length-1], hvLo:Math.min(...recent), hvHi:Math.max(...recent) }; }
 
+/* ---- trend context, from the same daily closes the vol stats already use (no extra API calls) ----
+   We keep only the summary numbers, never the raw arrays. */
+function trendFrom(closes){ const c=(closes||[]).filter(x=>x>0); if(c.length<50) return null;
+  const mean=(a)=>a.reduce((s,x)=>s+x,0)/a.length;
+  const ma=(n)=> c.length>=n ? mean(c.slice(-n)) : null;
+  const win=c.slice(-252);                                    // ~52 weeks of trading days
+  return { ma50:ma(50), ma200:ma(200), lo52:Math.min(...win), hi52:Math.max(...win) }; }
+
 /* ---- leveraged / inverse ETF detection ---- */
 const LEV_RE=/\b(\d(?:\.\d)?x|leveraged|ultra(?:pro)?|bull|bear)\b/i;   // "2X", "3x", "-1X", "Leveraged", "UltraPro", "Bull/Bear"
 const KNOWN_LEV=new Set(['COHX','CRDU','SOXL','TQQQ']);                 // verified; live fetch auto-detects the rest
@@ -530,7 +538,7 @@ function buildCandidates(){
     if(dte<dteMin||dte>dteMax) continue; const T=dte/365;
     const er=state.earnings[sym]||null, throughER=er?(new Date(expiry)>=new Date(er)):false;
     if(state.erFilter==='pre'&&throughER) continue; if(state.erFilter==='through'&&!throughER) continue;
-    const vf=volFor(sym);
+    const vf=volFor(sym), tr=state.trend[sym]||null;
     for(const p of ch.puts){ const [K,bid,ask,iv,oi]=p; if(K>=S) continue;
       const otm=(S-K)/S; if(otm<otmMin||otm>otmMax) continue; if(oi<minOI) continue;
       const prem=state.basis==='bid'?bid:(bid+ask)/2; if(prem<=0) continue;
@@ -538,6 +546,9 @@ function buildCandidates(){
       const be=K-prem, g=greeks(S,K,T,r,iv);
       out.push({ key:sym+'|'+K, sym, K, expiry, dte, S, iv, oi, bid, ask, prem, premDollar:prem*100, cap:K*100,
         staticRet, annual, be, cushion:(S-be)/S, delta:g.putDelta, pAssign:g.putITM, pop:1-g.putITM,
+        spread: (bid+ask)>0 ? (ask-bid)/((bid+ask)/2) : null,                                  // as a % of mid
+        pos52: tr ? Math.max(0,Math.min(100,(S-tr.lo52)/((tr.hi52-tr.lo52)||1)*100)) : null,   // 0 = at 52w low
+        rel200: (tr&&tr.ma200) ? (S-tr.ma200)/tr.ma200 : null,                                 // spot vs 200-day MA
         er, throughER, ivr:vf?vf.ivr:null, ivhv:vf?vf.ivhv:null }); } }
   const ws=state.w.yield+state.w.prem+state.w.safe||1, wY=state.w.yield/ws, wP=state.w.prem/ws, wS=state.w.safe/ws;
   const norm=(a,k,inv=false)=>{ const v=a.map(o=>o[k]),mn=Math.min(...v),mx=Math.max(...v),rg=mx-mn;
@@ -550,13 +561,20 @@ const PCOLS=[
   {key:'sym',label:'Ticker'},{key:'S',label:'Spot',fmt:(o)=>o.S.toFixed(2)},{key:'dte',label:'DTE',fmt:(o)=>o.dte},
   {key:'K',label:'Strike',fmt:(o)=>'<b>'+o.K.toFixed(2)+'</b>'},{key:'be',label:'Breakeven',fmt:(o)=>o.be.toFixed(2)},
   {key:'er',label:'Earnings',fmt:(o)=>o.er?(o.throughER?`<span class="erbadge">⚠ ${o.er.slice(5)}</span>`:`<span class="erclear">${o.er.slice(5)}</span>`):'<span class="faint">—</span>',val:(o)=>o.throughER?1:0},
-  {key:'prem',label:'Premium',fmt:(o)=>o.prem.toFixed(2)},{key:'premDollar',label:'$/contract',fmt:(o)=>'<span class="num-i">$'+o.premDollar.toFixed(0)+'</span>'},
+  {key:'prem',label:'Premium',fmt:(o)=>o.prem.toFixed(2)},
+  // Colour keyed off the DISPLAYED (rounded) number, like pAssignSweet — so two cells showing
+  // the same percentage never end up different colours.
+  {key:'spread',label:'Spread',fmt:(o)=>{ if(o.spread==null) return '<span class="faint">—</span>';
+    const p=Math.round(o.spread*100); return `<span class="${p<=10?'num-y':p>25?'num-r':''}">${p}%</span>`; }},
+  {key:'premDollar',label:'$/contract',fmt:(o)=>'<span class="num-i">$'+o.premDollar.toFixed(0)+'</span>'},
   {key:'cap',label:'Capital',fmt:(o)=>fmtMoney(o.cap)},{key:'staticRet',label:'Static',fmt:(o)=>fmtPct(o.staticRet,2)},
   {key:'annual',label:'Ann. yield',fmt:(o)=>'<span class="pill num-y">'+fmtPct(o.annual,1)+'</span>'},
   {key:'delta',label:'Δ',fmt:(o)=>o.delta.toFixed(2)},{key:'pAssign',label:'P(assign)',fmt:(o)=>'<span class="'+(pAssignSweet(o)?'pa-sweet':'num-r')+'">'+fmtPct(o.pAssign,0)+'</span>'},
   {key:'pop',label:'POP',fmt:(o)=>fmtPct(o.pop,0)},{key:'cushion',label:'Cushion',fmt:(o)=>fmtPct(o.cushion,1)},
   {key:'ivr',label:'IV rank',fmt:(o)=> o.ivr==null?'<span class="faint">—</span>':`<span class="${o.ivr>=66?'num-y':o.ivr<=33?'num-r':''}">${o.ivr.toFixed(0)}</span>`},
   {key:'ivhv',label:'IV/HV',fmt:(o)=> o.ivhv==null?'<span class="faint">—</span>':`<span class="${o.ivhv>=1.15?'num-y':o.ivhv<1?'num-r':''}">${o.ivhv.toFixed(2)}×</span>`},
+  {key:'pos52',label:'52w rng',fmt:(o)=> o.pos52==null?'<span class="faint">—</span>':o.pos52.toFixed(0)},
+  {key:'rel200',label:'vs 200d',fmt:(o)=> o.rel200==null?'<span class="faint">—</span>':`<span class="${o.rel200>=0?'num-y':'num-r'}">${(o.rel200>=0?'+':'')+fmtPct(o.rel200,1)}</span>`},
   {key:'score',label:'Composite',fmt:(o)=>'<span class="pill num-s">'+(o.score?o.score.toFixed(0):'—')+'</span>'}
 ];
 // Plain-language header tooltips (shown on hover) so students can learn each column in place.
@@ -568,6 +586,7 @@ const PCOL_TIPS={
   be:'Breakeven — the price where this trade breaks even at expiration: strike − premium. Below this you begin to lose money.',
   er:'Next earnings date. ⚠ means earnings fall before this expiration (extra risk); blank means none / unknown.',
   prem:'Premium — the credit per share you collect for selling this put.',
+  spread:'Bid-ask spread as a percentage of the mid price — how far apart buyers and sellers are. Tight (green, under 10%) means you can realistically get filled near the mid; wide (red, over 25%) means the premium shown is optimistic and you may have to give up a chunk of it to get filled. A juicy premium on a wide spread is often a trap.',
   premDollar:'Cash collected per contract = premium × 100 shares.',
   cap:'Capital — the cash secured as collateral = strike × 100 per contract.',
   staticRet:'Static return = premium ÷ strike. Your return if the put simply expires worthless.',
@@ -578,6 +597,8 @@ const PCOL_TIPS={
   cushion:'Cushion — how far the stock can fall to your breakeven (strike − premium) before you lose money. Always a bit larger than % OTM.',
   ivr:'IV Rank — where current implied volatility sits within its own past-year range (0–100). Higher = richer premium.',
   ivhv:'IV/HV — implied vs. recent historical volatility. Above 1× means options price in more movement than the stock has recently shown.',
+  pos52:'Where the current price sits within its 52-week range, from 0 (at the 52-week low) to 100 (at the 52-week high). Selling puts near the low can mean a cheaper entry — or a falling knife. Near 100 means you would be taking assignment at elevated prices.',
+  rel200:'How far the current price is above (green) or below (red) its 200-day moving average — a simple read on trend. Selling puts on a stock well below its 200-day means catching a downtrend, a very different trade from one in an uptrend.',
   score:'Composite — a 0–100 blend of yield, income and safety, weighted by your Composite Weighting sliders. Higher = best all-around pick in this list.'
 };
 const sortVal=(cols)=>(o,key)=>{ const c=cols.find(c=>c.key===key); return c&&c.val?c.val(o):o[key]; };
@@ -1112,6 +1133,7 @@ async function fetchHistory(sym){
   const base=state.backend.replace(/\/$/,'');
   try{ const r=await fetch(`${base}/history?symbol=${encodeURIComponent(sym)}`); if(!r.ok) return false;
     const j=await r.json(); const hv=hvFromCloses(j.closes||[]); if(hv) state.volstats[sym]=hv;
+    const tr=trendFrom(j.closes||[]); if(tr) state.trend[sym]=tr;      // same closes, no extra call
     return true; }catch(e){ return false; }
 }
 async function refreshLive(){
