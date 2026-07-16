@@ -407,7 +407,7 @@
   </div>
 
   <div class="footnote">
-    Greeks, probabilities and the modelers are Black–Scholes estimates from each contract's implied volatility — directional guides, not guarantees. IV rank and IV/HV compare current at-the-money IV to the stock's <i>realized</i> volatility and its trailing 1-year range (a proxy — Yahoo doesn't serve implied-vol history); IV/HV above ~1.15× means options are pricing more movement than the stock has delivered. Calls below your cost basis lock a share loss if assigned (flagged). Positions, holdings &amp; history are saved in this browser. Not investment advice.
+    Greeks, probabilities and the modelers are Black–Scholes estimates from each contract's implied volatility — directional guides, not guarantees. IV percentile and IV/HV compare current at-the-money IV to the stock's <i>realized</i> volatility over the trailing year (a proxy — our data source doesn't serve implied-vol history, so these measure IV against realized vol rather than against past IV). IV percentile is the share of the past year that realized vol sat below today's IV; IV/HV above ~1.15× means options are pricing more movement than the stock has delivered. Calls below your cost basis lock a share loss if assigned (flagged). Positions, holdings &amp; history are saved in this browser. Not investment advice.
   </div>
 </div>
 
@@ -488,15 +488,19 @@ function atmIV(sym){ const ch=state.chains[sym]; if(!ch) return null; const S=ch
   const near=(arr)=>{ if(!arr||!arr.length) return null; let b=null,bd=1e9; for(const r of arr) if(r[3]>0){const d=Math.abs(r[0]-S); if(d<bd){bd=d;b=r[3];}} return b; };
   const p=near(ch.puts), c=near(ch.calls), a=[p,c].filter(x=>x!=null); return a.length? a.reduce((s,x)=>s+x,0)/a.length : null; }
 function volFor(sym){ const vs=state.volstats[sym], atm=atmIV(sym); if(!vs||atm==null) return null;
-  const ivhv=atm/vs.hv30, ivr=Math.max(0,Math.min(100,(atm-vs.hvLo)/((vs.hvHi-vs.hvLo)||1)*100));
-  return {hv30:vs.hv30, atmIV:atm, ivhv, ivr}; }
+  // IV Percentile: the share of the trailing year that sat BELOW today's at-the-money IV.
+  // Unlike IV Rank it uses the whole distribution, so one freak vol spike can't pin it near zero.
+  const s=vs.hvSeries||[];
+  const ivp = s.length ? (s.reduce((n,v)=> n + (v<atm ? 1 : 0), 0) / s.length) * 100 : null;
+  return {hv30:vs.hv30, atmIV:atm, ivhv:atm/vs.hv30, ivp}; }
 function hvFromCloses(closes){ const c=(closes||[]).filter(x=>x>0); if(c.length<40) return null;
   const r=[]; for(let i=1;i<c.length;i++) r.push(Math.log(c[i]/c[i-1]));
   const win=21, ann=Math.sqrt(252);
   const sd=(a)=>{ const m=a.reduce((s,x)=>s+x,0)/a.length; const v=a.reduce((s,x)=>s+(x-m)*(x-m),0)/((a.length-1)||1); return Math.sqrt(v); };
   const series=[]; for(let i=win;i<=r.length;i++) series.push(sd(r.slice(i-win,i))*ann);
   if(!series.length) return null; const recent=series.slice(-252);
-  return { hv30:series[series.length-1], hvLo:Math.min(...recent), hvHi:Math.max(...recent) }; }
+  // Keep the whole trailing-year series: a percentile needs the distribution, not just its edges.
+  return { hv30:series[series.length-1], hvSeries:recent }; }
 
 /* ---- trend context, from the same daily closes the vol stats already use (no extra API calls) ----
    We keep only the summary numbers, never the raw arrays. */
@@ -549,7 +553,7 @@ function buildCandidates(){
         spread: (bid+ask)>0 ? (ask-bid)/((bid+ask)/2) : null,                                  // as a % of mid
         pos52: tr ? Math.max(0,Math.min(100,(S-tr.lo52)/((tr.hi52-tr.lo52)||1)*100)) : null,   // 0 = at 52w low
         rel200: (tr&&tr.ma200) ? (S-tr.ma200)/tr.ma200 : null,                                 // spot vs 200-day MA
-        er, throughER, ivr:vf?vf.ivr:null, ivhv:vf?vf.ivhv:null }); } }
+        er, throughER, ivp:vf?vf.ivp:null, ivhv:vf?vf.ivhv:null }); } }
   const ws=state.w.yield+state.w.prem+state.w.safe||1, wY=state.w.yield/ws, wP=state.w.prem/ws, wS=state.w.safe/ws;
   const norm=(a,k,inv=false)=>{ const v=a.map(o=>o[k]),mn=Math.min(...v),mx=Math.max(...v),rg=mx-mn;
     a.forEach(o=>{ let n=rg>1e-9?(o[k]-mn)/rg:0.5; o['_'+k]=inv?1-n:n; }); };
@@ -571,7 +575,8 @@ const PCOLS=[
   {key:'annual',label:'Ann. yield',fmt:(o)=>'<span class="pill num-y">'+fmtPct(o.annual,1)+'</span>'},
   {key:'delta',label:'Δ',fmt:(o)=>o.delta.toFixed(2)},{key:'pAssign',label:'P(assign)',fmt:(o)=>'<span class="'+(pAssignSweet(o)?'pa-sweet':'num-r')+'">'+fmtPct(o.pAssign,0)+'</span>'},
   {key:'pop',label:'POP',fmt:(o)=>fmtPct(o.pop,0)},{key:'cushion',label:'Cushion',fmt:(o)=>fmtPct(o.cushion,1)},
-  {key:'ivr',label:'IV rank',fmt:(o)=> o.ivr==null?'<span class="faint">—</span>':`<span class="${o.ivr>=66?'num-y':o.ivr<=33?'num-r':''}">${o.ivr.toFixed(0)}</span>`},
+  {key:'ivp',label:'IV %ile',fmt:(o)=>{ if(o.ivp==null) return '<span class="faint">—</span>';
+    const p=Math.round(o.ivp); return `<span class="${p>=66?'num-y':p<=33?'num-r':''}">${p}</span>`; }},
   {key:'ivhv',label:'IV/HV',fmt:(o)=> o.ivhv==null?'<span class="faint">—</span>':`<span class="${o.ivhv>=1.15?'num-y':o.ivhv<1?'num-r':''}">${o.ivhv.toFixed(2)}×</span>`},
   {key:'pos52',label:'52w rng',fmt:(o)=> o.pos52==null?'<span class="faint">—</span>':o.pos52.toFixed(0)},
   {key:'rel200',label:'vs 200d',fmt:(o)=> o.rel200==null?'<span class="faint">—</span>':`<span class="${o.rel200>=0?'num-y':'num-r'}">${(o.rel200>=0?'+':'')+fmtPct(o.rel200,1)}</span>`},
@@ -595,7 +600,7 @@ const PCOL_TIPS={
   pAssign:'P(assign) — estimated chance the put finishes in-the-money and you get assigned the shares.',
   pop:'POP — Probability of Profit: estimated chance the put expires worthless so you keep the full premium (≈ 100% − P(assign)).',
   cushion:'Cushion — how far the stock can fall to your breakeven (strike − premium) before you lose money. Always a bit larger than % OTM.',
-  ivr:'IV Rank — where current implied volatility sits within its own past-year range (0–100). Higher = richer premium.',
+  ivp:'IV Percentile — the share of the past year that volatility sat BELOW where it is today (0–100). 80 means options have been cheaper than this on 80% of days, so the premium is rich by recent standards — good for a seller. More reliable than IV Rank, which only looks at the single highest and lowest readings, so one freak spike can pin it near zero for a year.',
   ivhv:'IV/HV — implied vs. recent historical volatility. Above 1× means options price in more movement than the stock has recently shown.',
   pos52:'Where the current price sits within its 52-week range, from 0 (at the 52-week low) to 100 (at the 52-week high). Selling puts near the low can mean a cheaper entry — or a falling knife. Near 100 means you would be taking assignment at elevated prices.',
   rel200:'How far the current price is above (green) or below (red) its 200-day moving average — a simple read on trend. Selling puts on a stock well below its 200-day means catching a downtrend, a very different trade from one in an uptrend.',
