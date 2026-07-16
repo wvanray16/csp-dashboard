@@ -283,7 +283,7 @@
     </section>
 
     <section class="sig" style="margin-bottom:16px">
-      <div class="head"><span class="ttl">Price · 3-month daily</span><span class="who" id="tvWho">—</span></div>
+      <div class="head"><span class="ttl">Price · 5-month daily</span><span class="who" id="tvWho">—</span></div>
       <div class="tvbox" id="tvChart"></div>
     </section>
 
@@ -353,7 +353,7 @@
     </section>
 
     <section class="sig" style="margin-bottom:16px">
-      <div class="head"><span class="ttl">Price · 3-month daily</span><span class="who" id="ccChartWho">—</span></div>
+      <div class="head"><span class="ttl">Price · 5-month daily</span><span class="who" id="ccChartWho">—</span></div>
       <div class="tvbox" id="ccChart"></div>
     </section>
 
@@ -598,11 +598,11 @@ const sortVal=(cols)=>(o,key)=>{ const c=cols.find(c=>c.key===key); return c&&c.
 // "Sweet spot": P(assign) in the 20–30% target band (compared on the displayed, rounded percent).
 function pAssignSweet(o){ const p=Math.round(o.pAssign*100); return p>=20 && p<=30; }
 
-/* ============ 3-MONTH DAILY CANDLESTICK CHART (drawn from Tradier daily bars) ============
+/* ============ DAILY CANDLESTICK CHART (drawn from Tradier daily bars) ============
    Built in-house rather than embedded: TradingView's free widget auto-assigns its own colours
    to repeated studies and lets `range` override `interval`, so it couldn't honour a true daily
-   3-month view with a purple 9 EMA and a yellow 20 EMA. */
-const CHART_DAYS=63, EMA_FAST=9, EMA_SLOW=20;            // ~63 trading days ≈ 3 months
+   fixed-window view with a purple 9 EMA and a yellow 20 EMA. */
+const CHART_DAYS=105, EMA_FAST=9, EMA_SLOW=20;           // ~105 trading days ≈ 5 months
 const EMA_FAST_COLOR='#B98CE0', EMA_SLOW_COLOR='#F2C94C'; // purple / yellow
 // Standard EMA: seeded with the first close, then smoothed with k = 2/(len+1).
 function emaSeries(vals,len){ const k=2/(len+1); let prev=null; return vals.map(v=>{ prev = prev==null ? v : v*k+prev*(1-k); return prev; }); }
@@ -610,7 +610,7 @@ function emaSeries(vals,len){ const k=2/(len+1); let prev=null; return vals.map(
 function renderPriceChart(sym, boxId='tvChart', whoId='tvWho'){
   const box=document.getElementById(boxId), who=document.getElementById(whoId);
   if(!box) return;
-  if(!sym){ box.innerHTML='<div class="tvempty">Select a ticker to see its 3-month daily chart.</div>'; who.textContent='—'; return; }
+  if(!sym){ box.innerHTML='<div class="tvempty">Select a ticker to see its 5-month daily chart.</div>'; who.textContent='—'; return; }
   who.textContent=sym;
   const all=state.bars[sym]||[];
   if(all.length<2){ box.innerHTML='<div class="tvempty">'+(state.mode==='live'?('No price history for '+sym+' yet.'):'Switch to Live mode for the price chart.')+'</div>'; return; }
