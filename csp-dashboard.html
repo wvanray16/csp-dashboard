@@ -110,9 +110,6 @@
   .sig .head .ttl{font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
   .sig .head .who{font-family:var(--display);font-weight:600;font-size:15px}
   .sig .head .who small{color:var(--faint);font-weight:400;font-family:var(--mono);font-size:11px}
-  .tvbox{height:340px;margin-top:10px;border-radius:8px;overflow:hidden;background:var(--bg)}
-  .tvbox svg{cursor:crosshair;display:block}
-  .tvempty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--faint);font-size:12px}
   .sig svg{width:100%;height:188px;display:block}
   .chips-metric{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
   .mchip{flex:1 1 0;min-width:78px;background:var(--panel-2);border:1px solid var(--border-soft);border-radius:8px;padding:8px 10px}
@@ -282,11 +279,6 @@
       </div>
     </section>
 
-    <section class="sig" style="margin-bottom:16px">
-      <div class="head"><span class="ttl">Price · 5-month daily</span><span class="who" id="tvWho">—</span></div>
-      <div class="tvbox" id="tvChart"></div>
-    </section>
-
     <section class="modeler">
       <div class="lab">Outcome modeler — <b id="modWho">select a contract</b></div>
       <div class="scen"><div class="scenbox" id="scenWin"></div><div class="scenbox" id="scenAssign"></div><div class="scenbox" id="scenRoll"></div></div>
@@ -350,11 +342,6 @@
         <svg id="ccPayoff" viewBox="0 0 560 188" preserveAspectRatio="none"></svg>
         <div class="chips-metric" id="ccSigChips"></div>
       </div>
-    </section>
-
-    <section class="sig" style="margin-bottom:16px">
-      <div class="head"><span class="ttl">Price · 5-month daily</span><span class="who" id="ccChartWho">—</span></div>
-      <div class="tvbox" id="ccChart"></div>
     </section>
 
     <div class="rankbar"><span class="lab">Rank by</span>
@@ -467,7 +454,7 @@ const state = {
   watch:[], chains:{}, earnings:{}, expiry:DEMO.expiry, asOf:DEMO.asOf,
   basis:'mid', erFilter:'all', univFilter:'all', hoverSym:null, rankBy:'annual', sortKey:'annual', sortDir:-1, selKey:null,
   w:{yield:40,prem:20,safe:40}, roll:{buyback:null,credit:null,days:30,strike:null,key:null},
-  positions:[], holdings:[], realized:[], volstats:{}, meta:{}, bars:{}, posChains:{},
+  positions:[], holdings:[], realized:[], volstats:{}, meta:{}, posChains:{},
   cc:{ holdingIdx:-1, sym:null, cost:null, shares:100, basis:'mid', below:'show',
        rankBy:'ifcalled', sortKey:'ifCalledAnnual', sortDir:-1, selKey:null, w:{inc:30,called:40,keep:30} }
 };
@@ -598,122 +585,8 @@ const sortVal=(cols)=>(o,key)=>{ const c=cols.find(c=>c.key===key); return c&&c.
 // "Sweet spot": P(assign) in the 20–30% target band (compared on the displayed, rounded percent).
 function pAssignSweet(o){ const p=Math.round(o.pAssign*100); return p>=20 && p<=30; }
 
-/* ============ DAILY CANDLESTICK CHART (drawn from Tradier daily bars) ============
-   Built in-house rather than embedded: TradingView's free widget auto-assigns its own colours
-   to repeated studies and lets `range` override `interval`, so it couldn't honour a true daily
-   fixed-window view with a purple 9 EMA and a yellow 20 EMA. */
-const CHART_DAYS=105, EMA_FAST=9, EMA_SLOW=20;           // ~105 trading days ≈ 5 months
-const EMA_FAST_COLOR='#B98CE0', EMA_SLOW_COLOR='#F2C94C'; // purple / yellow
-// Standard EMA: seeded with the first close, then smoothed with k = 2/(len+1).
-function emaSeries(vals,len){ const k=2/(len+1); let prev=null; return vals.map(v=>{ prev = prev==null ? v : v*k+prev*(1-k); return prev; }); }
-
-function renderPriceChart(sym, boxId='tvChart', whoId='tvWho'){
-  const box=document.getElementById(boxId), who=document.getElementById(whoId);
-  if(!box) return;
-  if(!sym){ box.innerHTML='<div class="tvempty">Select a ticker to see its 5-month daily chart.</div>'; who.textContent='—'; return; }
-  who.textContent=sym;
-  const all=state.bars[sym]||[];
-  if(all.length<2){ box.innerHTML='<div class="tvempty">'+(state.mode==='live'?('No price history for '+sym+' yet.'):'Switch to Live mode for the price chart.')+'</div>'; return; }
-
-  // EMAs are computed across the FULL history, then sliced to the visible window, so the
-  // lines are already "warmed up" at the left edge instead of starting cold.
-  const closes=all.map(b=>b.close);
-  const eF=emaSeries(closes,EMA_FAST), eS=emaSeries(closes,EMA_SLOW);
-  const n=Math.min(CHART_DAYS,all.length), st=all.length-n;
-  const bars=all.slice(st), fF=eF.slice(st), fS=eS.slice(st);
-
-  const W=Math.max(360, box.clientWidth||900), H=340;
-  const padL=8, padR=54, padT=10, padB=20, pw=W-padL-padR, ph=H-padT-padB;
-  let lo=Infinity, hi=-Infinity;
-  bars.forEach(b=>{ lo=Math.min(lo,b.low); hi=Math.max(hi,b.high); });
-  fF.concat(fS).forEach(v=>{ lo=Math.min(lo,v); hi=Math.max(hi,v); });
-  const span=(hi-lo)||1, pad=span*0.06; lo-=pad; hi+=pad;
-  const Y=(v)=>padT+ph*(1-(v-lo)/((hi-lo)||1));
-  const bw=pw/n, X=(i)=>padL+i*bw+bw/2;
-
-  let grid='';
-  for(let g=0; g<=4; g++){ const v=lo+(hi-lo)*g/4, y=Y(v);
-    grid+=`<line x1="${padL}" y1="${y.toFixed(1)}" x2="${padL+pw}" y2="${y.toFixed(1)}" stroke="rgba(42,50,64,0.75)" stroke-width="1"/>`
-        +`<text x="${padL+pw+6}" y="${(y+3.5).toFixed(1)}" fill="#8b98a9" font-size="10" font-family="ui-monospace,monospace">${v.toFixed(2)}</text>`; }
-  let dates=''; const step=Math.max(1,Math.floor(n/5));
-  for(let i=0;i<n;i+=step) dates+=`<text x="${X(i).toFixed(1)}" y="${H-5}" fill="#8b98a9" font-size="10" text-anchor="middle" font-family="ui-monospace,monospace">${(bars[i].date||'').slice(5)}</text>`;
-
-  const bodyW=Math.max(1,bw*0.62); let candles='';
-  bars.forEach((b,i)=>{ const c=b.close>=b.open?'#3FB68B':'#E5687A', x=X(i);
-    const yO=Y(b.open), yC=Y(b.close), top=Math.min(yO,yC), h=Math.max(1,Math.abs(yC-yO));
-    candles+=`<line x1="${x.toFixed(1)}" y1="${Y(b.high).toFixed(1)}" x2="${x.toFixed(1)}" y2="${Y(b.low).toFixed(1)}" stroke="${c}" stroke-width="1"/>`
-           +`<rect x="${(x-bodyW/2).toFixed(1)}" y="${top.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${h.toFixed(1)}" fill="${c}"/>`; });
-
-  const line=(vals,color)=>`<polyline fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" points="${vals.map((v,i)=>X(i).toFixed(1)+','+Y(v).toFixed(1)).join(' ')}"/>`;
-  const emas=line(fS,EMA_SLOW_COLOR)+line(fF,EMA_FAST_COLOR);
-  const legend=`<g font-size="10" font-family="ui-monospace,monospace">`
-    +`<line x1="${padL+6}" y1="${padT+7}" x2="${padL+22}" y2="${padT+7}" stroke="${EMA_FAST_COLOR}" stroke-width="2"/>`
-    +`<text x="${padL+26}" y="${padT+10.5}" fill="${EMA_FAST_COLOR}">EMA 9</text>`
-    +`<line x1="${padL+74}" y1="${padT+7}" x2="${padL+90}" y2="${padT+7}" stroke="${EMA_SLOW_COLOR}" stroke-width="2"/>`
-    +`<text x="${padL+94}" y="${padT+10.5}" fill="${EMA_SLOW_COLOR}">EMA 20</text></g>`;
-
-  // Crosshair overlay: drawn once, then only its attributes are updated on mousemove
-  // (never a full redraw), so tracking stays smooth. #xhCatch captures the pointer.
-  const xh=`<g class="xh-g" style="display:none" pointer-events="none">`
-    +`<line class="xh-v" y1="${padT}" y2="${padT+ph}" stroke="#8b98a9" stroke-width="1" stroke-dasharray="3 3"/>`
-    +`<line class="xh-h" x1="${padL}" x2="${padL+pw}" stroke="#8b98a9" stroke-width="1" stroke-dasharray="3 3"/>`
-    +`<rect class="xh-pb" width="50" height="15" rx="3" fill="#5B8DEF"/>`
-    +`<text class="xh-pt" font-size="10" fill="#fff" font-family="ui-monospace,monospace" text-anchor="middle"></text>`
-    +`<rect class="xh-db" height="14" rx="3" fill="#2a3240"/>`
-    +`<text class="xh-dt" font-size="10" fill="#e6edf3" font-family="ui-monospace,monospace" text-anchor="middle"></text>`
-    +`<text class="xh-info" x="${padL+150}" y="${padT+10.5}" font-size="10" font-family="ui-monospace,monospace"></text>`
-    +`</g><rect x="${padL}" y="${padT}" width="${pw}" height="${ph}" fill="transparent"/>`;
-
-  box.innerHTML=`<svg width="100%" height="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${grid}${candles}${emas}${dates}${legend}${xh}</svg>`;
-
-  // Geometry the crosshair needs to map pixels back to prices/dates, kept per chart
-  // so the screener and covered-calls charts stay independent.
-  _charts[boxId]={ bars, fF, fS, W, H, padL, padT, pw, ph, lo, hi, bw, n };
-  attachCrosshair(box.querySelector('svg'), boxId);
-}
-
-const _charts={};
-function attachCrosshair(svg, boxId){
-  if(!svg) return;
-  const g=svg.querySelector('.xh-g'), info=svg.querySelector('.xh-info');
-  const hide=()=>{ g.style.display='none'; info.innerHTML=''; };
-  svg.addEventListener('mouseleave',hide);
-  svg.addEventListener('mousemove',(e)=>{
-    const c=_charts[boxId]; if(!c) return;
-    // getScreenCTM handles any CSS scaling of the SVG, so this stays accurate at any width.
-    const m=svg.getScreenCTM(); if(!m) return;
-    const pt=svg.createSVGPoint(); pt.x=e.clientX; pt.y=e.clientY;
-    const p=pt.matrixTransform(m.inverse());
-    if(p.x<c.padL||p.x>c.padL+c.pw||p.y<c.padT||p.y>c.padT+c.ph){ hide(); return; }
-    g.style.display='';
-    const i=Math.max(0,Math.min(c.n-1,Math.round((p.x-c.padL-c.bw/2)/c.bw)));   // snap to nearest candle
-    const bx=c.padL+i*c.bw+c.bw/2;
-    const price=c.lo+(c.hi-c.lo)*(1-(p.y-c.padT)/c.ph);
-    const b=c.bars[i], set=(sel,a)=>{ const el=svg.querySelector(sel); for(const k in a) el.setAttribute(k,a[k]); };
-    set('.xh-v',{x1:bx,x2:bx}); set('.xh-h',{y1:p.y,y2:p.y});
-    set('.xh-pb',{x:c.padL+c.pw+2, y:p.y-7.5});
-    set('.xh-pt',{x:c.padL+c.pw+27, y:p.y+3}); svg.querySelector('.xh-pt').textContent=price.toFixed(2);
-    const lab=(b.date||'').slice(5), wd=lab.length*6.2+10;
-    set('.xh-db',{x:bx-wd/2, y:c.H-16, width:wd});
-    set('.xh-dt',{x:bx, y:c.H-5.5}); svg.querySelector('.xh-dt').textContent=lab;
-    const col=b.close>=b.open?'#3FB68B':'#E5687A', d='#8b98a9';
-    info.innerHTML=`<tspan fill="${d}">${b.date}</tspan>`
-      +`<tspan fill="${d}">  O </tspan><tspan fill="${col}">${b.open.toFixed(2)}</tspan>`
-      +`<tspan fill="${d}">  H </tspan><tspan fill="${col}">${b.high.toFixed(2)}</tspan>`
-      +`<tspan fill="${d}">  L </tspan><tspan fill="${col}">${b.low.toFixed(2)}</tspan>`
-      +`<tspan fill="${d}">  C </tspan><tspan fill="${col}">${b.close.toFixed(2)}</tspan>`
-      +`<tspan fill="${EMA_FAST_COLOR}">   EMA9 ${c.fF[i].toFixed(2)}</tspan>`
-      +`<tspan fill="${EMA_SLOW_COLOR}">   EMA20 ${c.fS[i].toFixed(2)}</tspan>`;
-  });
-}
-let _chartResize;
-window.addEventListener('resize',()=>{ clearTimeout(_chartResize); _chartResize=setTimeout(()=>{
-  renderPriceChart(state.hoverSym);
-  renderPriceChart(ccCtx().sym,'ccChart','ccChartWho');
-},200); });
 
 function render(){
-  renderPriceChart(state.hoverSym);
   let cands=buildCandidates(); const sk=state.sortKey,dir=state.sortDir, sv=sortVal(PCOLS);
   cands.sort((a,b)=> sk==='sym'?(a.sym<b.sym?-1:a.sym>b.sym?1:0)*dir:((sv(a,sk)??0)-(sv(b,sk)??0))*dir);
   const thead=document.getElementById('thead');
@@ -885,7 +758,6 @@ function renderCalls(){
   // default cost basis to spot if empty
   const ch=state.chains[ctx.sym];
   if(state.cc.holdingIdx<0 && (state.cc.cost==null) && ch){ state.cc.cost=Math.round(ch.spot); document.getElementById('ccCost').value=state.cc.cost; }
-  renderPriceChart(ctx.sym,'ccChart','ccChartWho');
   const {rows}=buildCalls();
   const sk=state.cc.sortKey,dir=state.cc.sortDir,sv=sortVal(CCOLS);
   rows.sort((a,b)=>((sv(a,sk)??0)-(sv(b,sk)??0))*dir);
@@ -1240,7 +1112,6 @@ async function fetchHistory(sym){
   const base=state.backend.replace(/\/$/,'');
   try{ const r=await fetch(`${base}/history?symbol=${encodeURIComponent(sym)}`); if(!r.ok) return false;
     const j=await r.json(); const hv=hvFromCloses(j.closes||[]); if(hv) state.volstats[sym]=hv;
-    if(Array.isArray(j.bars)) state.bars[sym]=j.bars;                 // daily OHLC for the price chart
     return true; }catch(e){ return false; }
 }
 async function refreshLive(){
