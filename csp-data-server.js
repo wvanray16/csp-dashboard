@@ -162,11 +162,53 @@ app.get("/options", async (req, res) => {
   } catch (err) { console.error("[/options]", err.message); res.status(500).json({ error: err.message }); }
 });
 
+/* ---- Earnings dates (Finnhub) ----
+   Tradier's sandbox has no earnings calendar. Finnhub's free tier does, and one call returns
+   the WHOLE US calendar for a date window — so we fetch it once, cache it, and serve every
+   per-symbol lookup from memory. Zero per-ticker cost, and it uses its own token and rate
+   budget, so it never eats into Tradier's 60/min.
+   With no FINNHUB_TOKEN set this just returns null, exactly like before — nothing breaks. */
+const FINNHUB_TOKEN = process.env.FINNHUB_TOKEN || "";
+const EARNINGS_TTL_MS = 6 * 60 * 60 * 1000;              // earnings dates barely move
+let _earn = { at: 0, map: null, inflight: null };
+
+async function fetchEarningsCalendar() {
+  const from = new Date().toISOString().slice(0, 10);
+  const to = new Date(Date.now() + 120 * 86400000).toISOString().slice(0, 10);
+  const r = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${FINNHUB_TOKEN}`);
+  if (!r.ok) throw new Error(`Finnhub ${r.status} ${r.statusText}`);
+  const j = await r.json();
+  const map = {};
+  for (const e of (j.earningsCalendar || [])) {
+    const s = String(e.symbol || "").toUpperCase(), d = String(e.date || "");
+    if (!s || !d) continue;
+    if (!map[s] || d < map[s]) map[s] = d;               // keep each symbol's SOONEST upcoming date
+  }
+  return map;
+}
+async function earningsMap() {
+  if (!FINNHUB_TOKEN) return null;
+  if (_earn.map && Date.now() - _earn.at < EARNINGS_TTL_MS) return _earn.map;
+  if (_earn.inflight) return _earn.inflight;             // concurrent students share one fetch
+  _earn.inflight = fetchEarningsCalendar()
+    .then((map) => {
+      _earn = { at: Date.now(), map, inflight: null };
+      console.log(`[earnings] cached ${Object.keys(map).length} symbols from Finnhub`);
+      return map;
+    })
+    .catch((err) => {                                    // on failure keep serving the stale map
+      console.error("[earnings]", err.message);
+      _earn.inflight = null;
+      return _earn.map;
+    });
+  return _earn.inflight;
+}
+
 app.get("/earnings", async (req, res) => {
-  // Tradier's free sandbox has no earnings calendar; degrade gracefully so the dashboard
-  // simply omits the earnings badge instead of erroring.
   const symbol = String(req.query.symbol || "").trim().toUpperCase();
-  res.json({ symbol, nextEarningsDate: null });
+  if (!symbol) return res.status(400).json({ error: "pass ?symbol=COHR" });
+  const map = await earningsMap();
+  res.json({ symbol, nextEarningsDate: (map && map[symbol]) || null });
 });
 
 app.get("/history", async (req, res) => {
