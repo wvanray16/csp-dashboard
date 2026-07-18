@@ -205,6 +205,7 @@
     <button class="on" data-view="screener" id="navScreen">Put screen</button>
     <button data-view="calls" id="navCalls">Covered calls</button>
     <button data-view="positions" id="navPos">Positions &amp; holdings<span class="c" id="posCount">0</span></button>
+    <button data-view="rolls" id="navRolls">Rollover<span class="c" id="rollCount">0</span></button>
     <button data-view="history" id="navHist">History<span class="c" id="histCount">0</span></button>
   </nav>
 
@@ -390,6 +391,32 @@
     </div>
   </div>
 
+  <!-- =================== ROLLOVER =================== -->
+  <div class="view" id="viewRolls">
+    <div class="postiles">
+      <div class="tile"><div class="k">Rolls logged</div><div class="big" id="rlCount">0</div><div class="note">short puts rolled</div></div>
+      <div class="tile t-cap"><div class="k">Net roll credit</div><div class="big num-i" id="rlNet">$0</div><div class="note" id="rlNetNote">collected across all rolls</div></div>
+      <div class="tile t-yield"><div class="k">Strikes lowered</div><div class="big" id="rlDown" style="color:var(--spot)">0</div><div class="note">rolled down for safety</div></div>
+      <div class="tile t-score"><div class="k">Days added</div><div class="big" id="rlDays">0</div><div class="note">total expiry extension</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div class="lab">Log a roll</div>
+      <div class="posform">
+        <div class="fld"><label>Position rolled</label><select id="rlPos"></select></div>
+        <div class="fld"><label>New strike</label><input type="number" id="rlStrike" step="1"></div>
+        <div class="fld"><label>New expiry</label><input type="date" id="rlExp"></div>
+        <div class="fld"><label>Buyback / contract ($)</label><input type="number" id="rlBuyback" step="1" placeholder="cost to close old"></div>
+        <div class="fld"><label>New credit / contract ($)</label><input type="number" id="rlCredit" step="1" placeholder="received for new"></div>
+        <button class="btn add" id="logRollBtn">Log roll</button>
+      </div>
+      <div class="hint" style="margin-top:9px">Pick the open put you rolled, then enter the new strike/expiry, what you paid to buy back the old contract, and the credit for the new one — both <b style="color:var(--muted)">per contract</b> in dollars. Logging a roll updates that position in Positions &amp; Holdings to the new strike, expiry and running net credit. <span id="rlPreview"></span></div>
+    </div>
+
+    <div class="tablecard"><div class="scrollx"><table><thead><tr id="rlthead"></tr></thead><tbody id="rltbody"></tbody></table></div></div>
+    <div style="margin-top:14px"><button class="btn sm" id="clearRollBtn">Clear roll log</button></div>
+  </div>
+
   <!-- =================== HISTORY =================== -->
   <div class="view" id="viewHistory">
     <div class="postiles">
@@ -454,7 +481,7 @@ const state = {
   watch:[], chains:{}, earnings:{}, expiry:DEMO.expiry, asOf:DEMO.asOf,
   basis:'mid', erFilter:'all', univFilter:'all', hoverSym:null, rankBy:'annual', sortKey:'annual', sortDir:-1, selKey:null,
   w:{yield:40,prem:20,safe:40}, roll:{buyback:null,credit:null,days:30,strike:null,key:null},
-  positions:[], holdings:[], realized:[], volstats:{}, meta:{}, posChains:{}, trend:{},
+  positions:[], holdings:[], realized:[], rolls:[], volstats:{}, meta:{}, posChains:{}, trend:{},
   cc:{ holdingIdx:-1, sym:null, cost:null, shares:100, basis:'mid', below:'show',
        rankBy:'ifcalled', sortKey:'ifCalledAnnual', sortDir:-1, selKey:null, w:{inc:30,called:40,keep:30} }
 };
@@ -470,10 +497,11 @@ function seedDemo(){
 seedDemo();
 
 /* ============================ PERSISTENCE ============================ */
-const PKEY='csp_positions_v2', HKEY='csp_holdings_v1', RKEY='csp_realized_v1', WKEY='csp_watch_v1';
+const PKEY='csp_positions_v2', HKEY='csp_holdings_v1', RKEY='csp_realized_v1', WKEY='csp_watch_v1', RLKEY='csp_rolls_v1';
 function loadStore(){ try{ state.positions=JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ state.positions=[]; }
   try{ state.holdings=JSON.parse(localStorage.getItem(HKEY))||[]; }catch(e){ state.holdings=[]; }
   try{ state.realized=JSON.parse(localStorage.getItem(RKEY))||[]; }catch(e){ state.realized=[]; }
+  try{ state.rolls=JSON.parse(localStorage.getItem(RLKEY))||[]; }catch(e){ state.rolls=[]; }
   // Watchlist survives refreshes; only the tickers are stored — their live data is re-fetched on load.
   try{ const w=JSON.parse(localStorage.getItem(WKEY)); if(Array.isArray(w)) state.watch=w.filter(s=>typeof s==='string'&&s); }catch(e){}
   state.positions.forEach(p=>{ if(!p.type) p.type='put'; }); }
@@ -482,6 +510,7 @@ function savePos(){ try{ localStorage.setItem(PKEY,JSON.stringify(state.position
 function saveHold(){ try{ localStorage.setItem(HKEY,JSON.stringify(state.holdings)); }catch(e){} }
 function saveRealized(){ try{ localStorage.setItem(RKEY,JSON.stringify(state.realized)); }catch(e){} }
 function pushRealized(e){ state.realized.unshift(e); saveRealized(); }
+function saveRolls(){ try{ localStorage.setItem(RLKEY,JSON.stringify(state.rolls)); }catch(e){} }
 
 /* ---- realized-vol / IV-rank helpers ---- */
 function atmIV(sym){ const ch=state.chains[sym]; if(!ch) return null; const S=ch.spot;
@@ -943,7 +972,9 @@ function renderPositions(){
       : `<span class="${pa>=0.5?'neg':''}" title="Chance this contract finishes in the money and is assigned — recalculated from the live spot, this contract's implied volatility and ${dte} day${dte===1?'':'s'} left.">${fmtPct(pa,0)}</span>`;
     const itm = ch&&ch.spot ? (p.type==='call'?ch.spot>p.strike:ch.spot<p.strike) : null;
     const status= itm===null?'<span class="faint">—</span>':(itm?'<span class="neg">ITM</span>':'<span class="pos">OTM</span>');
-    const assignBtn = p.type==='put' ? `<span class="btn sm" data-assign="${i}" style="padding:2px 8px">assign</span>` : '';
+    const assignBtn = p.type==='put'
+      ? `<span class="btn sm" data-assign="${i}" style="padding:2px 8px">assign</span> <span class="btn sm" data-roll="${i}" style="padding:2px 8px">roll</span>`
+      : '';
     return `<tr>
       <td class="tk">${p.sym}${levBadge(p.sym)}<span class="typetag ${p.type}">${p.type==='call'?'CALL':'PUT'}</span></td>
       <td>${p.strike.toFixed(2)}</td><td>${p.exp.slice(5)}</td><td>${dte}</td>
@@ -958,6 +989,7 @@ function renderPositions(){
   }).join('');
   tb.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{state.positions.splice(+b.dataset.del,1);savePos();renderPositions();});
   tb.querySelectorAll('[data-assign]').forEach(b=>b.onclick=()=>assignPut(+b.dataset.assign));
+  tb.querySelectorAll('[data-roll]').forEach(b=>b.onclick=()=>{ state._rollPreselect=+b.dataset.roll; setView('rolls'); const s=document.getElementById('rlStrike'); if(s) s.focus(); });
   tb.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closePosition(+b.dataset.close));
 
   // holdings table
@@ -1022,6 +1054,80 @@ function sendToPositionForm(c){
 
 /* ---- realized history ---- */
 const RCOLS=['Date','Trade','Kind','Qty','Basis','Close','Realized','Note'];
+/* ============================ ROLLOVER LOG ============================ */
+const RLCOLS=['Date','Position','Qty','From','To','Δ Strike','Days +','Net credit','New BE',''];
+// Only short PUTS are rollable here — rolling calls uses different breakeven math (out of scope for now).
+function openPuts(){ return state.positions.map((p,i)=>({p,i})).filter(x=>x.p.type==='put'); }
+
+function rollInputs(){
+  const sel=document.getElementById('rlPos');
+  const idx = sel && sel.value!=='' ? parseInt(sel.value) : -1;
+  const ct=(id)=> (parseFloat(document.getElementById(id).value)||0)/100;   // dollars/contract -> per share
+  return { idx, p: idx>=0 ? state.positions[idx] : null,
+    toStrike: parseFloat(document.getElementById('rlStrike').value)||0,
+    toExp: document.getElementById('rlExp').value,
+    buyback: ct('rlBuyback'), credit: ct('rlCredit') };
+}
+function rollPreview(){
+  const el=document.getElementById('rlPreview'); if(!el) return;
+  const {p,toStrike,buyback,credit}=rollInputs();
+  if(!p||!(toStrike>0)){ el.innerHTML=''; return; }
+  const rollNet=(credit-buyback)*100*p.qty, newNet=p.credit-buyback+credit, newBE=toStrike-newNet;
+  el.innerHTML=`Net ${rollNet>=0?'credit':'debit'} this roll: <b style="color:var(--${rollNet>=0?'pos':'neg'})">${fmtMoney(rollNet)}</b> · new breakeven <b>$${newBE.toFixed(2)}</b>`;
+}
+function logRoll(){
+  const {p,toStrike,toExp,buyback,credit}=rollInputs();
+  if(!p){ alert('Pick the open put you rolled. If it isn’t listed, add it under Positions & Holdings first.'); return; }
+  if(!(toStrike>0)||!toExp){ alert('Enter the new strike and the new expiry.'); return; }
+  // A position's `credit` field tracks TOTAL net premium collected per share, so it survives rolls:
+  // new running net = what you'd kept, minus the buyback, plus the new credit.
+  const newNet=+(p.credit-buyback+credit).toFixed(4);
+  state.rolls.unshift({ date:new Date().toISOString().slice(0,10), sym:p.sym, qty:p.qty,
+    fromStrike:p.strike, fromExp:p.exp, toStrike, toExp, buyback, credit,
+    rollNet:+(credit-buyback).toFixed(4), newNet, newBE:+(toStrike-newNet).toFixed(2) });
+  saveRolls();
+  p.strike=toStrike; p.exp=toExp; p.credit=newNet; p.rolls=(p.rolls||0)+1; p.rolledAt=new Date().toISOString().slice(0,10);
+  savePos();
+  ['rlStrike','rlExp','rlBuyback','rlCredit'].forEach(id=>document.getElementById(id).value='');
+  renderRolls(); renderPositions();
+}
+function renderRolls(){
+  const R=state.rolls;
+  document.getElementById('rollCount').textContent=R.length;
+  document.getElementById('rlCount').textContent=R.length;
+  const net=R.reduce((s,e)=>s+e.rollNet*100*e.qty,0);
+  const ne=document.getElementById('rlNet'); ne.textContent=fmtMoney(net); ne.style.color=net>=0?'var(--pos)':'var(--neg)';
+  document.getElementById('rlDown').textContent=R.filter(e=>e.toStrike<e.fromStrike).length;
+  document.getElementById('rlDays').textContent=R.reduce((s,e)=>s+Math.max(0,Math.round((Date.parse(e.toExp)-Date.parse(e.fromExp))/86400000)),0);
+
+  const sel=document.getElementById('rlPos'), puts=openPuts(), keep=sel.value;
+  sel.innerHTML = puts.length
+    ? puts.map(x=>`<option value="${x.i}">${x.p.sym} ${x.p.strike}p · exp ${x.p.exp.slice(5)} ×${x.p.qty}</option>`).join('')
+    : `<option value="">— no open puts to roll —</option>`;
+  if(state._rollPreselect!=null && puts.some(x=>x.i===state._rollPreselect)){ sel.value=String(state._rollPreselect); }
+  else if([...sel.options].some(o=>o.value===keep)) sel.value=keep;
+  state._rollPreselect=null;
+  rollPreview();
+
+  document.getElementById('rlthead').innerHTML=RLCOLS.map(c=>`<th>${c}</th>`).join('');
+  const tb=document.getElementById('rltbody');
+  if(!R.length){ tb.innerHTML=`<tr><td colspan="${RLCOLS.length}"><div class="empty"><b>No rolls logged.</b><div class="small">Pick an open put above and log the roll, or hit “roll” on any open put in Positions & Holdings.</div></div></td></tr>`; return; }
+  tb.innerHTML=R.map((e,i)=>{ const dNet=e.rollNet*100*e.qty, dK=e.toStrike-e.fromStrike,
+    dDays=Math.round((Date.parse(e.toExp)-Date.parse(e.fromExp))/86400000);
+    return `<tr>
+      <td class="tk">${e.date.slice(5)}</td>
+      <td>${e.sym} <span class="typetag put">PUT</span></td>
+      <td>${e.qty}</td>
+      <td>${e.fromStrike.toFixed(2)} <span class="muted">${e.fromExp.slice(5)}</span></td>
+      <td>${e.toStrike.toFixed(2)} <span class="muted">${e.toExp.slice(5)}</span></td>
+      <td class="${dK<0?'pos':dK>0?'neg':''}">${(dK>0?'+':'')+dK.toFixed(2)}</td>
+      <td>${(dDays>=0?'+':'')+dDays}</td>
+      <td class="${dNet>=0?'pos':'neg'}">${fmtMoney(dNet)}</td>
+      <td>$${e.newBE.toFixed(2)}</td>
+      <td><span class="btn sm" data-rldel="${i}" style="padding:1px 6px">✕</span></td></tr>`; }).join('');
+  tb.querySelectorAll('[data-rldel]').forEach(b=>b.onclick=()=>{state.rolls.splice(+b.dataset.rldel,1);saveRolls();renderRolls();});
+}
+
 function renderHistory(){
   document.getElementById('histCount').textContent=state.realized.length;
   const R=state.realized;
@@ -1171,12 +1277,14 @@ function setView(v){
   document.getElementById('navScreen').classList.toggle('on',v==='screener');
   document.getElementById('navCalls').classList.toggle('on',v==='calls');
   document.getElementById('navPos').classList.toggle('on',v==='positions');
+  document.getElementById('navRolls').classList.toggle('on',v==='rolls');
   document.getElementById('navHist').classList.toggle('on',v==='history');
   document.getElementById('viewScreener').classList.toggle('on',v==='screener');
   document.getElementById('viewCalls').classList.toggle('on',v==='calls');
   document.getElementById('viewPositions').classList.toggle('on',v==='positions');
+  document.getElementById('viewRolls').classList.toggle('on',v==='rolls');
   document.getElementById('viewHistory').classList.toggle('on',v==='history');
-  if(v==='calls') renderCalls(); if(v==='positions') renderPositions(); if(v==='history') renderHistory();
+  if(v==='calls') renderCalls(); if(v==='positions') renderPositions(); if(v==='rolls') renderRolls(); if(v==='history') renderHistory();
 }
 
 /* ============================ WIRING ============================ */
@@ -1186,6 +1294,7 @@ function bind(){
   document.getElementById('navScreen').onclick=()=>setView('screener');
   document.getElementById('navCalls').onclick=()=>setView('calls');
   document.getElementById('navPos').onclick=()=>setView('positions');
+  document.getElementById('navRolls').onclick=()=>setView('rolls');
   document.getElementById('navHist').onclick=()=>setView('history');
   document.getElementById('connectBtn').onclick=()=>{state.backend=document.getElementById('backend').value.trim();refreshLive();};
   document.getElementById('backend').onchange=(e)=>state.backend=e.target.value.trim();
@@ -1245,10 +1354,13 @@ function bind(){
   document.getElementById('clearPosBtn').onclick=()=>{if(confirm('Remove all open options?')){state.positions=[];savePos();renderPositions();}};
   document.getElementById('clearHoldBtn').onclick=()=>{if(confirm('Remove all holdings?')){state.holdings=[];saveHold();renderPositions();}};
   document.getElementById('clearRealBtn').onclick=()=>{if(confirm('Clear all realized history? This cannot be undone.')){state.realized=[];saveRealized();renderHistory();}};
+  document.getElementById('logRollBtn').onclick=logRoll;
+  document.getElementById('clearRollBtn').onclick=()=>{if(confirm('Clear the entire roll log? This does not change your positions.')){state.rolls=[];saveRolls();renderRolls();}};
+  ['rlStrike','rlExp','rlBuyback','rlCredit','rlPos'].forEach(id=>document.getElementById(id).oninput=rollPreview);
 }
 
 /* ============================ INIT ============================ */
-loadStore(); seedDemo(); bind(); renderChips(); syncExpiryOptions(); updateStatus(); render(); renderCalls(); renderPositions(); renderHistory();
+loadStore(); seedDemo(); bind(); renderChips(); syncExpiryOptions(); updateStatus(); render(); renderCalls(); renderPositions(); renderRolls(); renderHistory();
 // Reflect the resolved backend (same-origin when hosted) in the connect field.
 document.getElementById('backend').value = state.backend;
 // When served from a real host (not opened as a local file), start in Live mode ready for input.
