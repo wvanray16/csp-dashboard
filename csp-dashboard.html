@@ -481,7 +481,7 @@ const DEMO = {
 /* ============================ STATE ============================ */
 const state = {
   view:'screener', mode:'demo', backend:(location.protocol==='file:'?'http://localhost:3000':location.origin),
-  watch:[], chains:{}, earnings:{}, expiry:DEMO.expiry, asOf:DEMO.asOf,
+  watch:[], chains:{}, earnings:{}, erEstimated:{}, erFeed:'ok', expiry:DEMO.expiry, asOf:DEMO.asOf,
   basis:'mid', erFilter:'all', univFilter:'all', hoverSym:null, rankBy:'annual', sortKey:'annual', sortDir:-1, selKey:null,
   w:{yield:40,prem:20,safe:40}, roll:{buyback:null,credit:null,days:30,strike:null,key:null},
   positions:[], holdings:[], realized:[], rolls:[], volstats:{}, meta:{}, posChains:{}, trend:{},
@@ -1273,8 +1273,19 @@ async function fetchSymbol(sym){
 }
 async function fetchEarnings(sym){
   const base=state.backend.replace(/\/$/,'');
-  try{ const r=await fetch(`${base}/earnings?symbol=${encodeURIComponent(sym)}`); if(!r.ok) return false;
-    const j=await r.json(); state.earnings[sym]=j.nextEarningsDate||null; return true; }catch(e){ return false; }
+  try{ const r=await fetch(`${base}/earnings?symbol=${encodeURIComponent(sym)}`); if(!r.ok){ state.erFeed='error'; return false; }
+    const j=await r.json(); state.earnings[sym]=j.nextEarningsDate||null;
+    state.erEstimated[sym]=Boolean(j.estimated);
+    if(j.status==='error') state.erFeed='error';        // sticky: one bad symbol marks the pass
+    return true; }catch(e){ state.erFeed='error'; return false; }
+}
+/* An empty earnings column used to be ambiguous: a broken feed looked exactly like a symbol
+   with genuinely nothing scheduled (every leveraged ETF here). Now only a real fault warns —
+   an ETF's blank "—" is the correct answer and stays quiet. */
+function erFeedWarning(){
+  return state.erFeed==='error'
+    ? '⚠ Earnings feed failing — dates unavailable, so ER shows "—" even where earnings exist.'
+    : '';
 }
 async function fetchHistory(sym){
   const base=state.backend.replace(/\/$/,'');
@@ -1286,12 +1297,13 @@ async function fetchHistory(sym){
 async function refreshLive(){
   state.posChains={};                    // drop cached position chains so P(assign) refreshes too
   if(!state.watch.length){ setLiveHint('Enter a ticker above and press Enter to pull its live options data.',false); renderPositions(); return; }
-  setLiveHint('Fetching…',false); let ok=0;
+  setLiveHint('Fetching…',false); let ok=0; state.erFeed='ok';   // re-judged fresh each pass
   for(const s of state.watch){ const a=await fetchSymbol(s); await fetchEarnings(s); await fetchHistory(s); if(a) ok++;
     // With no expiry set (e.g. straight after a page reload), adopt the nearest real one from the first hit.
     if(!state.expiry && state.chains[s] && state.chains[s].expiry) state.expiry=state.chains[s].expiry; }
   state.asOf=new Date().toLocaleString();
-  if(ok) setLiveHint(`Pulled ${ok}/${state.watch.length} symbols (puts, calls, earnings, IV/HV).`,false);
+  const erWarn=erFeedWarning();
+  if(ok) setLiveHint(`Pulled ${ok}/${state.watch.length} symbols (puts, calls, earnings, IV/HV).${erWarn?' '+erWarn:''}`, Boolean(erWarn));
   syncExpiryOptions(); renderChips(); render(); renderCalls(); renderPositions(); renderHistory(); updateStatus();
 }
 function setLiveHint(msg,warn){const h=document.getElementById('liveHint');h.innerHTML=msg;h.style.color=warn?'var(--risk)':'var(--faint)';}

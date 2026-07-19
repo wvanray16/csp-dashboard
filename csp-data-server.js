@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
+import YahooFinance from "yahoo-finance2";
 
 const app = express();
 app.use(cors());
@@ -79,7 +80,7 @@ app.get("/logout", (_req, res) => {
 // Everything past this point requires a valid access code.
 app.use((req, res, next) => {
   if (authed(req)) return next();
-  if (["/quote", "/options", "/earnings", "/history"].includes(req.path))
+  if (["/quote", "/options", "/earnings", "/earnings/status", "/history"].includes(req.path))
     return res.status(401).json({ error: "Unauthorized — sign in with your access code." });
   return res.redirect("/login");
 });
@@ -162,88 +163,103 @@ app.get("/options", async (req, res) => {
   } catch (err) { console.error("[/options]", err.message); res.status(500).json({ error: err.message }); }
 });
 
-/* ---- Earnings dates (Finnhub) ----
-   Tradier's sandbox has no earnings calendar. Finnhub's free tier does, and one call returns
-   the WHOLE US calendar for a date window — so we fetch it once, cache it, and serve every
-   per-symbol lookup from memory. Zero per-ticker cost, and it uses its own token and rate
-   budget, so it never eats into Tradier's 60/min.
-   With no FINNHUB_TOKEN set this just returns null, exactly like before — nothing breaks. */
-const FINNHUB_TOKEN = process.env.FINNHUB_TOKEN || "";
+/* ---- Earnings dates (Yahoo, via yahoo-finance2) ----
+   Previously Finnhub: it needed a key, its free tier silently row-capped the calendar, and a
+   missing FINNHUB_TOKEN produced the same bare "—" as a symbol with nothing scheduled. Yahoo
+   needs no key and no quota, and yahoo-finance2 handles its cookie/crumb handshake for us.
+
+   Lookups are per-symbol rather than one bulk calendar, so results are cached per symbol —
+   including the misses. Most of this watchlist is leveraged ETFs, which legitimately have no
+   earnings; without negative caching every refresh would re-ask Yahoo about all of them. */
 const EARNINGS_TTL_MS = 6 * 60 * 60 * 1000;              // earnings dates barely move
-let _earn = { at: 0, map: null, inflight: null };
+const EARNINGS_NONE_TTL_MS = 24 * 60 * 60 * 1000;        // "it's an ETF" stays true much longer
+const EARNINGS_EMPTY_TTL_MS = 10 * 60 * 1000;            // an empty answer is not trustworthy — recheck soon
+const EARNINGS_ERROR_TTL_MS = 60 * 1000;                 // brief backoff so failures don't storm
+const EARNINGS_EMPTY_RETRIES = 2;                        // Yahoo returns an empty array ~40% of the time
 
-const EARNINGS_DAYS = 90;                                // horizon we care about (CSP expiries sit well inside this)
-const CHUNK_DAYS = 7;                                    // small enough to survive Finnhub's row cap
-const dstr = (d) => d.toISOString().slice(0, 10);
-const addDays = (iso, n) => dstr(new Date(Date.parse(iso) + n * 86400000));
+const yahoo = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
 
-async function finnhubCalendar(from, to) {
-  const r = await fetch(`https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${FINNHUB_TOKEN}`);
-  if (!r.ok) throw new Error(`Finnhub ${r.status} ${r.statusText}`);
-  const j = await r.json();
-  return Array.isArray(j.earningsCalendar) ? j.earningsCalendar : [];
-}
+/* symbol -> { at, date, kind }  kind: 'ok' | 'none' | 'empty' | 'error' */
+const _earn = new Map();
+let _earnLastError = null;
 
-/* Finnhub caps each response at roughly 1500 rows and fills it from the LATEST date
-   backwards, silently dropping the oldest days — no error, no flag. In peak earnings season
-   that cap is spent in about a week, so a wide window returns only its final few days.
-   We therefore pull in small windows, and if one still comes back truncated (its earliest
-   row is later than we asked for) we split it in half and retry. */
-async function fetchRange(from, to, depth = 0) {
-  const rows = await finnhubCalendar(from, to);
-  if (rows.length && depth < 5) {
-    let min = "9999-12-31";
-    for (const e of rows) if (e.date && e.date < min) min = e.date;
-    if (min > from) {                                    // truncated — the oldest days got dropped
-      const mid = addDays(from, Math.floor((Date.parse(to) - Date.parse(from)) / 86400000 / 2));
-      if (mid > from && mid < to) {
-        const older = await fetchRange(from, mid, depth + 1);
-        const newer = await fetchRange(addDays(mid, 1), to, depth + 1);
-        return older.concat(newer);
+const ttlFor = (kind) =>
+  kind === "ok" ? EARNINGS_TTL_MS
+  : kind === "none" ? EARNINGS_NONE_TTL_MS
+  : kind === "empty" ? EARNINGS_EMPTY_TTL_MS
+  : EARNINGS_ERROR_TTL_MS;
+
+/* Two different "no date" answers, and conflating them is what makes the column lie:
+     - THROWS "No fundamentals data found"  -> genuinely has no earnings (every leveraged ETF
+       here). A settled fact, safe to cache for a day.
+     - RETURNS an earnings object with an EMPTY earningsDate array -> Yahoo being flaky. GLW
+       does this on roughly 2 of every 5 calls despite reporting on 2026-07-28. Caching that
+       as "no earnings" would blank a real date for a day — the very bug we are fixing.
+   So: retry an empty answer, and if it stays empty, cache it only briefly. */
+const isNoDataError = (msg) => /no fundamentals data/i.test(msg || "");
+
+async function earningsFor(symbol) {
+  const hit = _earn.get(symbol);
+  if (hit && Date.now() - hit.at < ttlFor(hit.kind)) return hit;
+
+  let entry;
+  for (let attempt = 0; attempt <= EARNINGS_EMPTY_RETRIES; attempt++) {
+    try {
+      const r = await yahoo.quoteSummary(symbol, { modules: ["calendarEvents"] });
+      const e = r?.calendarEvents?.earnings;
+      const raw = e?.earningsDate?.[0];
+      _earnLastError = null;
+      if (raw) {
+        entry = { at: Date.now(), date: new Date(raw).toISOString().slice(0, 10),
+                  kind: "ok", estimated: Boolean(e?.isEarningsDateEstimate) };
+        break;                                            // got a date — done
       }
+      entry = { at: Date.now(), date: null, kind: "empty" };
+      continue;                                           // empty: try again before believing it
+    } catch (err) {
+      if (isNoDataError(err.message)) {
+        entry = { at: Date.now(), date: null, kind: "none" };   // settled: no earnings exist
+      } else {
+        console.error("[earnings]", symbol, err.message);
+        _earnLastError = `${symbol}: ${err.message}`;
+        entry = { at: Date.now(), date: null, kind: "error" };
+      }
+      break;
     }
   }
-  return rows;
+  _earn.set(symbol, entry);
+  return entry;
 }
 
-async function fetchEarningsCalendar() {
-  const start = dstr(new Date()), end = addDays(dstr(new Date()), EARNINGS_DAYS);
-  const rows = [];
-  for (let f = start; f < end; f = addDays(f, CHUNK_DAYS)) {
-    const t = addDays(f, CHUNK_DAYS - 1) > end ? end : addDays(f, CHUNK_DAYS - 1);
-    rows.push(...await fetchRange(f, t));
-  }
-  const map = {};
-  for (const e of rows) {
-    const s = String(e.symbol || "").toUpperCase(), d = String(e.date || "");
-    if (!s || !d) continue;
-    if (!map[s] || d < map[s]) map[s] = d;               // keep each symbol's SOONEST upcoming date
-  }
-  return map;
-}
-async function earningsMap() {
-  if (!FINNHUB_TOKEN) return null;
-  if (_earn.map && Date.now() - _earn.at < EARNINGS_TTL_MS) return _earn.map;
-  if (_earn.inflight) return _earn.inflight;             // concurrent students share one fetch
-  _earn.inflight = fetchEarningsCalendar()
-    .then((map) => {
-      _earn = { at: Date.now(), map, inflight: null };
-      console.log(`[earnings] cached ${Object.keys(map).length} symbols from Finnhub`);
-      return map;
-    })
-    .catch((err) => {                                    // on failure keep serving the stale map
-      console.error("[earnings]", err.message);
-      _earn.inflight = null;
-      return _earn.map;
-    });
-  return _earn.inflight;
-}
-
+/* A null date used to be ambiguous: a broken feed and "this is an ETF" looked identical.
+   `status` separates them so a real failure announces itself instead of passing as "no
+   earnings" — which is what let the column sit empty for so long without anyone noticing. */
 app.get("/earnings", async (req, res) => {
   const symbol = String(req.query.symbol || "").trim().toUpperCase();
   if (!symbol) return res.status(400).json({ error: "pass ?symbol=COHR" });
-  const map = await earningsMap();
-  res.json({ symbol, nextEarningsDate: (map && map[symbol]) || null });
+  const e = await earningsFor(symbol);
+  res.json({
+    symbol,
+    nextEarningsDate: e.date,
+    estimated: Boolean(e.estimated),
+    status: e.kind === "error" ? "error" : "ok",   // 'none' is a valid answer, not a fault
+  });
+});
+
+/* Diagnostic: answers "why is the earnings column empty?" without needing server logs. */
+app.get("/earnings/status", async (_req, res) => {
+  const entries = [..._earn.entries()];
+  res.json({
+    source: "yahoo-finance2",
+    tokenRequired: false,
+    status: entries.some(([, e]) => e.kind === "error") ? "error" : "ok",
+    cached: entries.length,
+    withDate: entries.filter(([, e]) => e.kind === "ok").length,
+    noEarnings: entries.filter(([, e]) => e.kind === "none").length,
+    emptyAnswer: entries.filter(([, e]) => e.kind === "empty").map(([s]) => s),  // recheck shortly
+    failing: entries.filter(([, e]) => e.kind === "error").map(([s]) => s),
+    lastError: _earnLastError,
+  });
 });
 
 app.get("/history", async (req, res) => {
