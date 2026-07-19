@@ -229,10 +229,13 @@
       <div class="card">
         <div class="lab" style="display:flex;justify-content:space-between;align-items:center;gap:10px">
           <span>Watchlist</span>
-          <div class="seg tiny" id="univSeg" style="text-transform:none;letter-spacing:0">
-            <button data-univ="all" class="on">All</button>
-            <button data-univ="stocks">Stocks</button>
-            <button data-univ="lev">Leveraged</button>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn sm" id="exportWatch" title="Copy the watchlist symbols to the clipboard">Export</button>
+            <div class="seg tiny" id="univSeg" style="text-transform:none;letter-spacing:0">
+              <button data-univ="all" class="on">All</button>
+              <button data-univ="stocks">Stocks</button>
+              <button data-univ="lev">Leveraged</button>
+            </div>
           </div>
         </div>
         <div class="chips" id="chips"></div>
@@ -1187,6 +1190,39 @@ function renderChips(){
   add.onkeydown=(e)=>{if(e.key==='Enter'){const v=add.value; add.value=''; addTicker(v);}};
 }
 
+/* Copy the whole watchlist (not just what the universe filter is showing) as a plain
+   comma-separated list, so it can be pasted anywhere outside the browser. localStorage is
+   per-browser, so this is the only way the list leaves this machine. */
+async function exportWatchlist(){
+  const btn=document.getElementById('exportWatch');
+  if(!state.watch.length){ setLiveHint('Watchlist is empty — nothing to export.',true); return; }
+  const text=state.watch.join(',');
+  const flash=(msg)=>{ const old=btn.textContent; btn.textContent=msg; setTimeout(()=>{btn.textContent=old;},1400); };
+  const n=state.watch.length;
+  const ok=(msg)=>{ flash('Copied'); setLiveHint(`Copied ${n} ticker${n>1?'s':''} to the clipboard${msg||''}.`,false); };
+  try{
+    await navigator.clipboard.writeText(text);
+    ok();
+  }catch(e){
+    /* The async Clipboard API needs a secure context and can still be denied by permissions.
+       execCommand is deprecated but works in exactly those cases; if even that fails, show the
+       list inline so it can be selected by hand rather than being lost. */
+    if(legacyCopy(text)){ ok(); return; }
+    flash('Copy failed');
+    setLiveHint(`Couldn't reach the clipboard — copy manually: <code>${text}</code>`,true);
+  }
+}
+function legacyCopy(text){
+  const ta=document.createElement('textarea');
+  ta.value=text; ta.setAttribute('readonly','');
+  ta.style.cssText='position:fixed;top:-1000px;opacity:0';
+  document.body.appendChild(ta); ta.select();
+  let done=false;
+  try{ done=document.execCommand('copy'); }catch(e){ done=false; }
+  ta.remove();
+  return done;
+}
+
 /* Add any ticker the user types: validate, fetch live data, give feedback. Shared by the
    prominent livebar input and the inline "+ ADD" chip. */
 async function addTicker(sym){
@@ -1308,6 +1344,7 @@ function bind(){
     document.querySelectorAll('#basisSeg button').forEach(x=>x.classList.toggle('on',x===b));render();});
   document.getElementById('erSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.erFilter=b.dataset.er;
     document.querySelectorAll('#erSeg button').forEach(x=>x.classList.toggle('on',x===b));render();});
+  document.getElementById('exportWatch').onclick=exportWatchlist;
   document.getElementById('univSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{state.univFilter=b.dataset.univ;
     document.querySelectorAll('#univSeg button').forEach(x=>x.classList.toggle('on',x===b));
     if(state.hoverSym && !passesUniv(state.hoverSym)) state.hoverSym=null;
