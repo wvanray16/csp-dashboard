@@ -171,6 +171,75 @@
   .footnote code{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--muted)}
 
   .view{display:none} .view.on{display:block}
+
+  /* ---- Instruction view ---- */
+  .ins{max-width:880px}
+  .ins-hero{border:1px solid var(--border);border-radius:12px;background:
+    radial-gradient(700px 260px at 12% -30%, rgba(63,182,139,0.10), transparent 65%),var(--panel);
+    padding:26px 26px 24px;margin-bottom:18px}
+  .ins-hero h2{font-family:var(--display);font-size:26px;margin:0 0 8px;letter-spacing:-0.01em;font-weight:700}
+  .ins-hero h2 span{color:var(--yield)}
+  .ins-hero p{margin:0;color:var(--muted);font-size:13px;max-width:64ch;line-height:1.6}
+  .ins-toc{display:flex;flex-wrap:wrap;gap:7px;margin-top:18px}
+  .ins-toc a{font-size:11px;color:var(--muted);background:var(--panel-2);border:1px solid var(--border);
+    border-radius:20px;padding:6px 13px;text-decoration:none;transition:.15s}
+  .ins-toc a:hover{color:var(--text);border-color:var(--spot)}
+  .ins section{scroll-margin-top:14px}
+  .ins h3{font-family:var(--display);font-size:17px;margin:30px 0 4px;letter-spacing:-0.005em}
+  .ins h3 .n{color:var(--faint);font-family:var(--mono);font-size:12px;font-weight:400;margin-right:9px}
+  .ins h4{font-size:12.5px;margin:20px 0 6px;color:var(--text);letter-spacing:.02em}
+  .ins p{color:var(--muted);font-size:12.5px;line-height:1.65;margin:9px 0;max-width:70ch}
+  .ins strong{color:var(--text);font-weight:700}
+  .ins em{color:var(--text);font-style:normal;border-bottom:1px dotted var(--faint)}
+  .ins code{background:var(--panel-2);border:1px solid var(--border-soft);border-radius:4px;
+    padding:1px 5px;font-size:11.5px;color:var(--score)}
+  .ins ul{margin:9px 0;padding-left:18px;color:var(--muted);font-size:12.5px;line-height:1.65;max-width:70ch}
+  .ins li{margin:5px 0} .ins li::marker{color:var(--faint)}
+
+  /* the four-stage loop */
+  .cyc{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:16px 0 6px}
+  .cyc .st{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:13px 13px 14px;position:relative}
+  .cyc .st .no{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint)}
+  .cyc .st .ttl{font-size:12.5px;font-weight:700;margin:5px 0 6px;color:var(--text)}
+  .cyc .st .d{font-size:11px;color:var(--muted);line-height:1.5}
+  .cyc .st:nth-child(1){border-color:rgba(63,182,139,0.4)} .cyc .st:nth-child(1) .ttl{color:var(--yield)}
+  .cyc .st:nth-child(2){border-color:rgba(224,164,88,0.4)}  .cyc .st:nth-child(2) .ttl{color:var(--income)}
+  .cyc .st:nth-child(3){border-color:rgba(185,140,224,0.4)} .cyc .st:nth-child(3) .ttl{color:var(--call)}
+  .cyc .st:nth-child(4){border-color:rgba(91,141,239,0.4)}  .cyc .st:nth-child(4) .ttl{color:var(--spot)}
+  .cyc-loop{font-size:10.5px;color:var(--faint);text-align:right;letter-spacing:.04em}
+  @media(max-width:820px){.cyc{grid-template-columns:1fr 1fr}}
+  @media(max-width:480px){.cyc{grid-template-columns:1fr}}
+
+  /* glossary + worked-example tables */
+  /* the global `table` rule carries min-width:980px so the numeric screens scroll
+     horizontally inside .scrollx; a prose table must opt out or it forces page overflow */
+  .ins-tbl{width:100%;border-collapse:collapse;margin:12px 0;font-size:11.5px;min-width:0}
+  .ins-tbl tbody tr{cursor:default} .ins-tbl tbody tr:hover{background:transparent}
+  /* the data-table rules (tbody td) force nowrap + right-align for the numeric screens;
+     this is a prose table, so both must be reset or the definitions never wrap */
+  .ins-tbl th{text-align:left;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);
+    border-bottom:1px solid var(--border);padding:7px 9px 7px 0;font-weight:500;white-space:normal;
+    position:static;background:transparent;cursor:default}   /* not sortable, unlike the data tables */
+  .ins-tbl td{border-bottom:1px solid var(--border-soft);padding:8px 9px 8px 0;color:var(--muted);
+    vertical-align:top;line-height:1.55;white-space:normal;text-align:left}
+  .ins-tbl td:first-child{color:var(--text);font-weight:700;white-space:nowrap;width:1%;padding-right:16px}
+  .ins-tbl tr:last-child td{border-bottom:0}
+
+  .ins-calc{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 15px;margin:12px 0}
+  .ins-calc .row{display:flex;justify-content:space-between;gap:14px;padding:6px 0;border-bottom:1px solid var(--border-soft);font-size:12px}
+  .ins-calc .row:last-child{border-bottom:0}
+  .ins-calc .row .k{color:var(--muted)} .ins-calc .row .v{color:var(--text);font-weight:700;white-space:nowrap}
+  .ins-calc .row.tot{border-top:1px solid var(--border);margin-top:5px;padding-top:9px}
+  .ins-calc .row.tot .v{color:var(--yield)}
+
+  .ins-note{border-left:2px solid var(--spot);background:var(--panel);border-radius:0 8px 8px 0;
+    padding:11px 14px;margin:14px 0;font-size:12px;color:var(--muted);line-height:1.6;max-width:70ch}
+  .ins-warn{border-left-color:var(--risk)}
+  .ins-warn b{color:var(--risk)}
+  .ins-note b{color:var(--text)}
+  .ins-disc{border:1px solid rgba(229,104,122,0.3);background:rgba(229,104,122,0.05);border-radius:9px;
+    padding:14px 16px;margin:26px 0 0;font-size:11.5px;color:var(--muted);line-height:1.65}
+  .ins-disc b{color:var(--risk)}
   .posform{display:grid;grid-template-columns:repeat(6,1fr) auto;gap:10px;align-items:end}
   .posform .fld label{font-size:9.5px}
   .postiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0 16px}
@@ -207,6 +276,7 @@
     <button data-view="positions" id="navPos">Positions &amp; holdings<span class="c" id="posCount">0</span></button>
     <button data-view="rolls" id="navRolls">Rollover<span class="c" id="rollCount">0</span></button>
     <button data-view="history" id="navHist">History<span class="c" id="histCount">0</span></button>
+    <button data-view="instruction" id="navIns" style="margin-left:auto">Instruction</button>
   </nav>
 
   <div class="livebar" id="livebar">
@@ -434,6 +504,236 @@
     </div>
     <div class="tablecard"><div class="scrollx"><table><thead><tr id="rthead"></tr></thead><tbody id="rtbody"></tbody></table></div></div>
     <div style="margin-top:14px"><button class="btn sm" id="clearRealBtn">Clear history</button></div>
+  </div>
+
+  <div class="view" id="viewInstruction">
+   <div class="ins">
+
+    <div class="ins-hero">
+      <h2>The Wheel, <span>end to end</span></h2>
+      <p>A cash-secured put is a promise to buy 100 shares at a price you name, and you are paid
+         today for making that promise. The wheel is what happens when you keep making it — and
+         what you do on the days the promise is called in. This page covers the full cycle, every
+         column on the screens next door, one trade followed from open to close, and the ways the
+         strategy loses money.</p>
+      <div class="ins-toc">
+        <a href="#ins-cycle">1 · The cycle</a>
+        <a href="#ins-cols">2 · Reading the screens</a>
+        <a href="#ins-worked">3 · A trade, start to finish</a>
+        <a href="#ins-risk">4 · How it loses money</a>
+      </div>
+    </div>
+
+    <section id="ins-cycle">
+      <h3><span class="n">01</span>The cycle</h3>
+      <p>Four stages. You are paid at every one of them, which is the appeal — and the reason the
+         risk is easy to overlook.</p>
+
+      <div class="cyc">
+        <div class="st"><div class="no">Stage 1</div><div class="ttl">Sell a put</div>
+          <div class="d">You pick a strike below the current price and sell a put. Cash is set
+            aside to cover the purchase. You keep the premium no matter what happens next.</div></div>
+        <div class="st"><div class="no">Stage 2</div><div class="ttl">Expire or assign</div>
+          <div class="d">Above your strike at expiry, the put dies worthless and you repeat
+            Stage&nbsp;1. Below it, you buy 100 shares at the strike.</div></div>
+        <div class="st"><div class="no">Stage 3</div><div class="ttl">Sell a call</div>
+          <div class="d">Now holding shares, you sell a covered call above your cost basis and
+            collect premium again while you wait.</div></div>
+        <div class="st"><div class="no">Stage 4</div><div class="ttl">Called away</div>
+          <div class="d">Above the call strike, your shares are sold at that strike. You are back
+            to cash — and back to Stage&nbsp;1.</div></div>
+      </div>
+      <div class="cyc-loop">└ back to Stage 1 ┘</div>
+
+      <h4>Stage 1 — selling the cash-secured put</h4>
+      <p>Selling a put obliges you to buy 100 shares at the strike if the buyer exercises.
+         <em>Cash-secured</em> means the money to honour that is sitting in the account, unspent:
+         <code>strike × 100</code> per contract. A $50 strike ties up <strong>$5,000</strong>. That
+         reserved cash is the capital the yield columns measure against — it is not free to use
+         elsewhere, which is exactly why the return is calculated on it.</p>
+      <p>The premium is credited immediately and is yours permanently. It is never returned,
+         whatever the stock does afterwards.</p>
+
+      <h4>Stage 2 — the two outcomes</h4>
+      <p>At expiration the stock is either above your strike or below it.</p>
+      <ul>
+        <li><strong>Above the strike</strong> — the put expires worthless. You keep the premium,
+            the cash is released, and nothing else happens. This is the outcome the
+            <em>POP</em> column estimates.</li>
+        <li><strong>Below the strike</strong> — you are assigned: 100 shares arrive and
+            <code>strike × 100</code> leaves the account. You paid the strike, but you kept the
+            premium, so your true cost per share is <code>strike − premium</code>. That figure is
+            the <em>Breakeven</em> column, and it becomes your cost basis for the rest of the wheel.</li>
+      </ul>
+      <div class="ins-note"><b>Assignment is not a failure.</b> It is half the strategy — the wheel
+        cannot turn without it. What matters is not whether you get assigned, but <i>where the stock
+        goes after you do</i>. Being assigned at $50 on a stock that steadies at $48 is a working
+        wheel. Being assigned at $50 on a stock that keeps sliding to $30 is the failure mode, and
+        no amount of premium collected fixes it.</div>
+
+      <h4>Stage 3 — selling the covered call</h4>
+      <p>Holding 100 shares, you sell one call against them. <em>Covered</em> means you own the
+         shares you may have to deliver, so no additional cash is reserved. You collect premium
+         again, which lowers your effective basis further.</p>
+      <p>Strike choice is the whole decision. Sell a call <strong>above your cost basis</strong> and
+         being called away is a profit. Sell one <strong>below it</strong> — tempting after the
+         stock has fallen, because those premiums are fatter — and being called away locks in a loss
+         on the shares that the premium may not cover. The Covered calls screen flags strikes below
+         your basis for exactly this reason.</p>
+
+      <h4>Stage 4 — called away, and round again</h4>
+      <p>Above the call strike at expiry, your shares are sold at that strike. You keep every
+         premium collected along the way plus any gain from your basis up to the call strike. The
+         account is back to cash and the cycle restarts.</p>
+      <p>Below the call strike, the call expires worthless, you keep the shares and the premium, and
+         you sell another call. This is where a wheel can sit for months: holding shares, collecting
+         call premium, waiting for a price that may not return.</p>
+    </section>
+
+    <section id="ins-cols">
+      <h3><span class="n">02</span>Reading the screens</h3>
+      <p>Every column on the Put screen, and what it is actually computed from. Hovering any column
+         header in the table gives you the short version.</p>
+
+      <table class="ins-tbl">
+        <thead><tr><th>Column</th><th>What it means</th></tr></thead>
+        <tbody>
+          <tr><td>Spot</td><td>The underlying's current price. Everything else is measured against it.</td></tr>
+          <tr><td>DTE</td><td>Days to expiration. Drives the annualized figure and how fast time decay works for you.</td></tr>
+          <tr><td>Strike</td><td>The price you are promising to buy at. Lower strike = safer, less premium.</td></tr>
+          <tr><td>Breakeven</td><td><code>strike − premium</code>. Below this at expiry you are losing money. After assignment, this is your cost basis.</td></tr>
+          <tr><td>Earnings</td><td>Next confirmed earnings date. If it falls before expiry, the trade carries earnings risk — a single gap can move the stock more than weeks of premium. "—" means no earnings scheduled (ETFs never have any).</td></tr>
+          <tr><td>Premium</td><td>Credit per share, at mid or bid depending on the toggle. <strong>Mid is optimistic</strong> — see Spread.</td></tr>
+          <tr><td>Spread</td><td>Bid-ask width as a % of mid. Wide spreads mean the mid price is fiction; you will fill closer to the bid, and exiting early is expensive.</td></tr>
+          <tr><td>$/contract</td><td>Premium in dollars: <code>premium × 100</code>. What actually lands in the account.</td></tr>
+          <tr><td>Capital</td><td>Cash tied up: <code>strike × 100</code>. The denominator for both return figures.</td></tr>
+          <tr><td>Static</td><td>Return if the put expires worthless: <code>premium ÷ strike</code>. The plain, un-annualized truth.</td></tr>
+          <tr><td>Ann. yield</td><td>Static scaled to a year: <code>static × 365 ÷ DTE</code>. Useful for comparing different expirations — but it assumes you repeat this trade all year at the same terms, which nobody does. Treat big numbers here with suspicion.</td></tr>
+          <tr><td>Δ (delta)</td><td>How much the option price moves per $1 move in the stock. As a rough rule its magnitude approximates the chance of finishing in-the-money, though the model's own probability is the column beside it.</td></tr>
+          <tr><td>P(assign)</td><td>Modelled probability the put finishes in-the-money and you are assigned.</td></tr>
+          <tr><td>POP</td><td>Probability of profit — the chance it expires worthless: <code>100% − P(assign)</code>.</td></tr>
+          <tr><td>Cushion</td><td>How far the stock can fall <strong>to your breakeven</strong>, not merely to the strike: <code>(spot − breakeven) ÷ spot</code>. Always slightly larger than the plain % out-of-the-money, because the premium absorbs the first part of the fall.</td></tr>
+          <tr><td>IV %ile</td><td>Where current implied volatility sits in the past year's distribution. High means options are expensive right now — richer premium, and usually a reason for it.</td></tr>
+          <tr><td>IV/HV</td><td>Implied volatility against the stock's realized volatility. Above ~1.15× means options are pricing in more movement than the stock has actually delivered, which favours the seller.</td></tr>
+        </tbody>
+      </table>
+
+      <div class="ins-note"><b>Two probabilities, one caveat.</b> P(assign) and POP are Black–Scholes
+        outputs derived from implied volatility. They describe a model, not the future. They assume
+        volatility stays put and price moves smoothly — the two assumptions that break precisely when
+        it matters, in a crash or on an earnings gap.</div>
+    </section>
+
+    <section id="ins-worked">
+      <h3><span class="n">03</span>A trade, start to finish</h3>
+      <p>Real numbers, taken from a row on the Put screen. AMKR trading at <strong>$62.94</strong>,
+         selling the <strong>$50 put</strong> with <strong>33 days</strong> to expiry.</p>
+
+      <h4>Opening the put</h4>
+      <div class="ins-calc">
+        <div class="row"><span class="k">Premium collected (2.77 × 100)</span><span class="v">+$277</span></div>
+        <div class="row"><span class="k">Capital reserved (50 × 100)</span><span class="v">$5,000</span></div>
+        <div class="row"><span class="k">Static return (277 ÷ 5,000)</span><span class="v">5.5%</span></div>
+        <div class="row"><span class="k">Annualized (5.5% × 365 ÷ 33)</span><span class="v">61.4%</span></div>
+        <div class="row"><span class="k">Breakeven (50 − 2.77)</span><span class="v">$47.23</span></div>
+        <div class="row"><span class="k">Cushion — fall to breakeven</span><span class="v">25.0%</span></div>
+        <div class="row"><span class="k">P(assign) / POP</span><span class="v">30% / 70%</span></div>
+      </div>
+      <p>The stock can fall 25% before this trade loses a dollar. The model puts the odds of simply
+         keeping the $277 at roughly 70%.</p>
+
+      <h4>Outcome A — it expires above $50 (the 70% case)</h4>
+      <p>The put dies worthless. You keep <strong>$277</strong> on $5,000 reserved for 33 days, the
+         cash frees up, and you sell another put. That is the wheel spinning without ever holding
+         a share.</p>
+
+      <h4>Outcome B — it closes at $46 and you are assigned</h4>
+      <div class="ins-calc">
+        <div class="row"><span class="k">Shares received</span><span class="v">100 @ $50 = $5,000</span></div>
+        <div class="row"><span class="k">Premium already banked</span><span class="v">+$277</span></div>
+        <div class="row"><span class="k">Effective cost basis</span><span class="v">$47.23/share</span></div>
+        <div class="row"><span class="k">Market value at $46</span><span class="v">$4,600</span></div>
+        <div class="row tot"><span class="k">Unrealized position</span><span class="v">−$123</span></div>
+      </div>
+      <p>Down $123 — not the $400 the raw share price suggests, because the premium absorbed most of
+         it. You now own the stock and move to Stage 3.</p>
+
+      <h4>Selling the covered call</h4>
+      <p>With a basis of $47.23, you sell a <strong>$50 call</strong> for $1.20 — <strong>+$120</strong>
+         — chosen above your basis so being called away is profitable.</p>
+      <div class="ins-calc">
+        <div class="row"><span class="k">Put premium</span><span class="v">+$277</span></div>
+        <div class="row"><span class="k">Call premium</span><span class="v">+$120</span></div>
+        <div class="row"><span class="k">Shares bought at $50, sold at $50</span><span class="v">$0</span></div>
+        <div class="row tot"><span class="k">Net on the full cycle</span><span class="v">+$397</span></div>
+      </div>
+      <p>$397 on $5,000 of committed capital, over roughly two months, and the account is back to
+         cash. That is one complete turn of the wheel.</p>
+      <div class="ins-note ins-warn"><b>Now the uncomfortable version.</b> The stock closes at $34
+        instead. You are assigned at $50 against a $47.23 basis and holding a $1,300 unrealized loss.
+        Selling a $50 call now earns almost nothing — the strike is far away. Selling a $36 call pays
+        well, but if called away you crystallize a loss of over $1,100. So you wait, collecting thin
+        premium on a position that needed the stock to recover 39% to get back to your basis. Nothing
+        went wrong mechanically. This is the strategy working exactly as designed.</div>
+    </section>
+
+    <section id="ins-risk">
+      <h3><span class="n">04</span>How it loses money</h3>
+      <p>The wheel produces frequent small gains and occasional large losses. That shape is
+         comfortable to trade and easy to misread — a long run of wins says little about the risk
+         being carried.</p>
+
+      <h4>The asymmetry, stated plainly</h4>
+      <p>In the example above you collected <strong>$277</strong>. If AMKR went to zero you would
+         lose <strong>$4,723</strong>. That ratio — small defined gain against a large, remote loss —
+         is the trade. It is not a flaw, but it must be sized as what it is.</p>
+
+      <h4>A cash-secured put is not a conservative instrument</h4>
+      <p>Selling a cash-secured put has the same payoff shape as owning the stock and selling a call
+         against it. You carry essentially the downside of stock ownership, with your upside capped
+         at the premium. Wheeling a stock you would not want to own outright is the most common way
+         this ends badly.</p>
+
+      <h4>Leveraged ETFs deserve their own warning</h4>
+      <p>Most of the tickers on the default watchlist are <strong>leveraged single-stock or index
+         ETFs</strong> — the ones tagged <code>LEV</code>. They target a multiple of their
+         underlying's <em>daily</em> return, rebalanced every day. Over time that produces volatility
+         decay: in a choppy market the fund can bleed value even when the underlying is flat. They
+         are structurally different from owning a company.</p>
+      <p>This matters at Stage 2. Assignment on a normal stock leaves you holding a business that
+         can recover while you sell calls against it. Assignment on a 3× ETF leaves you holding an
+         instrument that may decay whether or not the underlying recovers — and the premium is fat
+         precisely because the market knows this. Their bid-ask spreads are also wide, so mid-price
+         premium overstates what you will actually be filled at.</p>
+
+      <h4>Earnings</h4>
+      <p>If an earnings date falls before expiry, a single overnight move can exceed weeks of
+         collected premium. That is why the Earnings column exists and why the screen can filter to
+         pre-earnings only. High IV percentile before earnings is not free money — it is the market
+         pricing a known event.</p>
+
+      <h4>Capped upside</h4>
+      <p>The covered call that pays you also sells your recovery. Assigned at $50, you sell a $52
+         call; the stock runs to $70 and you deliver at $52. You did not lose money, but the wheel
+         cost you the move that would have repaid several assignments.</p>
+
+      <h4>What this dashboard cannot tell you</h4>
+      <ul>
+        <li>Quotes are <strong>delayed roughly 15 minutes</strong>. Never treat a premium here as a live fill.</li>
+        <li>Probabilities and greeks are model estimates, not forecasts.</li>
+        <li>Mid-price premium is frequently unachievable on wide-spread names.</li>
+        <li>Nothing here accounts for commissions, assignment fees, or the tax treatment of premium and share sales.</li>
+      </ul>
+
+      <div class="ins-disc"><b>Educational material only.</b> This page explains how the wheel
+        strategy works mechanically. It is not investment advice, not a recommendation to trade any
+        security shown, and not a suggestion that any ticker on the watchlist is suitable for you.
+        Options carry risk of substantial loss, including losses larger than the premium collected.
+        Assignment can occur early, before expiration. Decide what you can afford to lose, and
+        consult a licensed financial professional about your own circumstances.</div>
+    </section>
+
+   </div>
   </div>
 
   <div class="footnote">
@@ -1316,7 +1616,7 @@ function setMode(m){
   state.mode=m;
   document.getElementById('mDemo').classList.toggle('on',m==='demo');
   document.getElementById('mLive').classList.toggle('on',m==='live');
-  document.getElementById('livebar').classList.toggle('show',m==='live');
+  document.getElementById('livebar').classList.toggle('show', m==='live' && state.view!=='instruction');
   if(m==='demo'){ seedDemo(); syncExpiryOptions(); }
   renderChips(); updateStatus(); render(); renderCalls(); renderPositions(); renderHistory();
 }
@@ -1327,11 +1627,15 @@ function setView(v){
   document.getElementById('navPos').classList.toggle('on',v==='positions');
   document.getElementById('navRolls').classList.toggle('on',v==='rolls');
   document.getElementById('navHist').classList.toggle('on',v==='history');
+  document.getElementById('navIns').classList.toggle('on',v==='instruction');
   document.getElementById('viewScreener').classList.toggle('on',v==='screener');
   document.getElementById('viewCalls').classList.toggle('on',v==='calls');
   document.getElementById('viewPositions').classList.toggle('on',v==='positions');
   document.getElementById('viewRolls').classList.toggle('on',v==='rolls');
   document.getElementById('viewHistory').classList.toggle('on',v==='history');
+  document.getElementById('viewInstruction').classList.toggle('on',v==='instruction');
+  /* the ticker bar drives the live screens; on a reading page it is just noise */
+  document.getElementById('livebar').classList.toggle('show', state.mode==='live' && v!=='instruction');
   if(v==='calls') renderCalls(); if(v==='positions') renderPositions(); if(v==='rolls') renderRolls(); if(v==='history') renderHistory();
 }
 
@@ -1344,6 +1648,7 @@ function bind(){
   document.getElementById('navPos').onclick=()=>setView('positions');
   document.getElementById('navRolls').onclick=()=>setView('rolls');
   document.getElementById('navHist').onclick=()=>setView('history');
+  document.getElementById('navIns').onclick=()=>setView('instruction');
   document.getElementById('connectBtn').onclick=()=>{state.backend=document.getElementById('backend').value.trim();refreshLive();};
   document.getElementById('backend').onchange=(e)=>state.backend=e.target.value.trim();
   const mainTick=document.getElementById('addTickerMain');
