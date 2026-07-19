@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
-import YahooFinance from "yahoo-finance2";
 
 const app = express();
 app.use(cors());
@@ -163,69 +162,70 @@ app.get("/options", async (req, res) => {
   } catch (err) { console.error("[/options]", err.message); res.status(500).json({ error: err.message }); }
 });
 
-/* ---- Earnings dates (Yahoo, via yahoo-finance2) ----
-   Previously Finnhub: it needed a key, its free tier silently row-capped the calendar, and a
-   missing FINNHUB_TOKEN produced the same bare "—" as a symbol with nothing scheduled. Yahoo
-   needs no key and no quota, and yahoo-finance2 handles its cookie/crumb handshake for us.
+/* ---- Earnings dates (Finnhub, per symbol) ----
+   Source history, so this is not re-litigated: Tradier's sandbox has no earnings calendar.
+   Finnhub's BULK calendar silently caps at ~1500 rows, which needed an ugly chunk-and-split
+   recursion. Yahoo replaced it (no key, no quota) and worked for a few hours before Render's
+   outbound IP earned a hard `Failed to get crumb, status 429` — a restart did not clear it,
+   so it is an IP-level block, not a stale credential. Yahoo is not viable from this host.
 
-   Lookups are per-symbol rather than one bulk calendar, so results are cached per symbol —
-   including the misses. Most of this watchlist is leveraged ETFs, which legitimately have no
-   earnings; without negative caching every refresh would re-ask Yahoo about all of them. */
+   Finnhub is proven to work from Render (the fundamentals dashboard runs on it). Querying
+   PER SYMBOL rather than pulling the whole market sidesteps the row cap that caused the
+   original truncation bug — no chunking, no recursion, one small call per ticker.
+
+   Results are cached per symbol, misses included: 14 of the default watchlist are leveraged
+   ETFs with no earnings at all, and without negative caching every refresh would re-ask. */
+const FINNHUB_TOKEN = process.env.FINNHUB_TOKEN || process.env.FINNHUB_API_KEY || "";
 const EARNINGS_TTL_MS = 6 * 60 * 60 * 1000;              // earnings dates barely move
 const EARNINGS_NONE_TTL_MS = 24 * 60 * 60 * 1000;        // "it's an ETF" stays true much longer
-const EARNINGS_EMPTY_TTL_MS = 10 * 60 * 1000;            // an empty answer is not trustworthy — recheck soon
 const EARNINGS_ERROR_TTL_MS = 60 * 1000;                 // brief backoff so failures don't storm
-const EARNINGS_EMPTY_RETRIES = 2;                        // Yahoo returns an empty array ~40% of the time
+const EARNINGS_DAYS = 120;                               // horizon; CSP expiries sit well inside it
 
-const yahoo = new YahooFinance({ suppressNotices: ["yahooSurvey"] });
+const dstr = (d) => d.toISOString().slice(0, 10);
+const addDays = (iso, n) => dstr(new Date(Date.parse(iso) + n * 86400000));
 
-/* symbol -> { at, date, kind }  kind: 'ok' | 'none' | 'empty' | 'error' */
+/* symbol -> { at, date, kind }  kind: 'ok' | 'none' | 'error' */
 const _earn = new Map();
 let _earnLastError = null;
 
 const ttlFor = (kind) =>
-  kind === "ok" ? EARNINGS_TTL_MS
-  : kind === "none" ? EARNINGS_NONE_TTL_MS
-  : kind === "empty" ? EARNINGS_EMPTY_TTL_MS
-  : EARNINGS_ERROR_TTL_MS;
+  kind === "ok" ? EARNINGS_TTL_MS : kind === "none" ? EARNINGS_NONE_TTL_MS : EARNINGS_ERROR_TTL_MS;
 
-/* Two different "no date" answers, and conflating them is what makes the column lie:
-     - THROWS "No fundamentals data found"  -> genuinely has no earnings (every leveraged ETF
-       here). A settled fact, safe to cache for a day.
-     - RETURNS an earnings object with an EMPTY earningsDate array -> Yahoo being flaky. GLW
-       does this on roughly 2 of every 5 calls despite reporting on 2026-07-28. Caching that
-       as "no earnings" would blank a real date for a day — the very bug we are fixing.
-   So: retry an empty answer, and if it stays empty, cache it only briefly. */
-const isNoDataError = (msg) => /no fundamentals data/i.test(msg || "");
+async function finnhubEarnings(symbol) {
+  const from = dstr(new Date()), to = addDays(from, EARNINGS_DAYS);
+  const url = `https://finnhub.io/api/v1/calendar/earnings?symbol=${encodeURIComponent(symbol)}`
+            + `&from=${from}&to=${to}&token=${FINNHUB_TOKEN}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`Finnhub ${r.status} ${r.statusText || ""}`.trim());
+  const j = await r.json();
+  const rows = Array.isArray(j.earningsCalendar) ? j.earningsCalendar : [];
+  /* Finnhub returns the window unsorted, and may include a date already past. Keep the
+     soonest date that is still ahead of us. */
+  const upcoming = rows
+    .map((e) => String(e.date || ""))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= from)
+    .sort();
+  return upcoming[0] || null;
+}
 
 async function earningsFor(symbol) {
+  if (!FINNHUB_TOKEN) return { at: Date.now(), date: null, kind: "error", unconfigured: true,
+                               reason: "FINNHUB_TOKEN is not set on the data server" };
   const hit = _earn.get(symbol);
   if (hit && Date.now() - hit.at < ttlFor(hit.kind)) return hit;
 
   let entry;
-  for (let attempt = 0; attempt <= EARNINGS_EMPTY_RETRIES; attempt++) {
-    try {
-      const r = await yahoo.quoteSummary(symbol, { modules: ["calendarEvents"] });
-      const e = r?.calendarEvents?.earnings;
-      const raw = e?.earningsDate?.[0];
-      _earnLastError = null;
-      if (raw) {
-        entry = { at: Date.now(), date: new Date(raw).toISOString().slice(0, 10),
-                  kind: "ok", estimated: Boolean(e?.isEarningsDateEstimate) };
-        break;                                            // got a date — done
-      }
-      entry = { at: Date.now(), date: null, kind: "empty" };
-      continue;                                           // empty: try again before believing it
-    } catch (err) {
-      if (isNoDataError(err.message)) {
-        entry = { at: Date.now(), date: null, kind: "none" };   // settled: no earnings exist
-      } else {
-        console.error("[earnings]", symbol, err.message);
-        _earnLastError = `${symbol}: ${err.message}`;
-        entry = { at: Date.now(), date: null, kind: "error", reason: String(err.message).slice(0, 160) };
-      }
-      break;
-    }
+  try {
+    const date = await finnhubEarnings(symbol);
+    /* An empty list is a real answer here, not a glitch: ETFs have no earnings. Unlike Yahoo,
+       Finnhub does not throw for them, so no retry dance is needed. */
+    entry = date ? { at: Date.now(), date, kind: "ok" }
+                 : { at: Date.now(), date: null, kind: "none" };
+    _earnLastError = null;
+  } catch (err) {
+    console.error("[earnings]", symbol, err.message);
+    _earnLastError = `${symbol}: ${err.message}`;
+    entry = { at: Date.now(), date: null, kind: "error", reason: String(err.message).slice(0, 160) };
   }
   _earn.set(symbol, entry);
   return entry;
@@ -241,7 +241,7 @@ app.get("/earnings", async (req, res) => {
   res.json({
     symbol,
     nextEarningsDate: e.date,
-    estimated: Boolean(e.estimated),
+    estimated: false,                              // Finnhub does not flag estimated dates
     status: e.kind === "error" ? "error" : "ok",   // 'none' is a valid answer, not a fault
     reason: e.reason || null,                      // surfaced in the UI so the cause needs no log dig
   });
@@ -251,15 +251,16 @@ app.get("/earnings", async (req, res) => {
 app.get("/earnings/status", async (_req, res) => {
   const entries = [..._earn.entries()];
   res.json({
-    source: "yahoo-finance2",
-    tokenRequired: false,
-    status: entries.some(([, e]) => e.kind === "error") ? "error" : "ok",
+    source: "finnhub",
+    tokenConfigured: Boolean(FINNHUB_TOKEN),
+    status: !FINNHUB_TOKEN ? "unconfigured"
+          : entries.some(([, e]) => e.kind === "error") ? "error" : "ok",
     cached: entries.length,
     withDate: entries.filter(([, e]) => e.kind === "ok").length,
     noEarnings: entries.filter(([, e]) => e.kind === "none").length,
-    emptyAnswer: entries.filter(([, e]) => e.kind === "empty").map(([s]) => s),  // recheck shortly
     failing: entries.filter(([, e]) => e.kind === "error").map(([s]) => s),
     lastError: _earnLastError,
+    windowDays: EARNINGS_DAYS,
   });
 });
 
