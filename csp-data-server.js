@@ -222,7 +222,7 @@ async function earningsFor(symbol) {
       } else {
         console.error("[earnings]", symbol, err.message);
         _earnLastError = `${symbol}: ${err.message}`;
-        entry = { at: Date.now(), date: null, kind: "error" };
+        entry = { at: Date.now(), date: null, kind: "error", reason: String(err.message).slice(0, 160) };
       }
       break;
     }
@@ -243,6 +243,7 @@ app.get("/earnings", async (req, res) => {
     nextEarningsDate: e.date,
     estimated: Boolean(e.estimated),
     status: e.kind === "error" ? "error" : "ok",   // 'none' is a valid answer, not a fault
+    reason: e.reason || null,                      // surfaced in the UI so the cause needs no log dig
   });
 });
 

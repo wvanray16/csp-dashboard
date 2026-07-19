@@ -781,7 +781,7 @@ const DEMO = {
 /* ============================ STATE ============================ */
 const state = {
   view:'screener', mode:'demo', backend:(location.protocol==='file:'?'http://localhost:3000':location.origin),
-  watch:[], chains:{}, earnings:{}, erEstimated:{}, erFail:[], expiry:DEMO.expiry, asOf:DEMO.asOf,
+  watch:[], chains:{}, earnings:{}, erEstimated:{}, erFail:[], erReason:null, expiry:DEMO.expiry, asOf:DEMO.asOf,
   basis:'mid', erFilter:'all', univFilter:'all', hoverSym:null, rankBy:'annual', sortKey:'annual', sortDir:-1, selKey:null,
   w:{yield:40,prem:20,safe:40}, roll:{buyback:null,credit:null,days:30,strike:null,key:null},
   positions:[], holdings:[], realized:[], rolls:[], volstats:{}, meta:{}, posChains:{}, trend:{},
@@ -1577,7 +1577,8 @@ async function fetchEarnings(sym){
     if(!r.ok){ if(!state.erFail.includes(sym)) state.erFail.push(sym); return false; }
     const j=await r.json(); state.earnings[sym]=j.nextEarningsDate||null;
     state.erEstimated[sym]=Boolean(j.estimated);
-    if(j.status==='error'&&!state.erFail.includes(sym)) state.erFail.push(sym);
+    if(j.status==='error'){ if(!state.erFail.includes(sym)) state.erFail.push(sym);
+      if(j.reason) state.erReason=j.reason; }         // the provider's own words, shown in the banner
     return true; }catch(e){ if(!state.erFail.includes(sym)) state.erFail.push(sym); return false; }
 }
 /* An empty earnings column used to be ambiguous: a broken feed looked exactly like a symbol
@@ -1587,8 +1588,14 @@ function erFeedWarning(){
   const f=state.erFail; if(!f.length) return '';
   /* Name the symbols. A blanket "feed failing" reads as though every date were missing, which
      is wrong whenever only some lookups failed — and it hides which tickers to distrust. */
+  const all=f.length>=state.watch.length && state.watch.length>0;
   const who=f.length<=4?f.join(', '):`${f.slice(0,4).join(', ')} +${f.length-4} more`;
-  return `⚠ Earnings lookup failed for ${who} — their ER shows "—" even if earnings exist. Other tickers are unaffected; press Refresh all to retry.`;
+  const why=state.erReason?` Provider said: "${state.erReason}".`:'';
+  /* Every symbol failing is a different problem from a few failing — one is the feed itself,
+     the other is a handful of flaky lookups. Say which, and quote the provider verbatim. */
+  return all
+    ? `⚠ Earnings feed down — all ${f.length} lookups failed, so every ER shows "—".${why}`
+    : `⚠ Earnings lookup failed for ${who} — their ER shows "—" even if earnings exist. Other tickers are unaffected; press Refresh all to retry.${why}`;
 }
 async function fetchHistory(sym){
   const base=state.backend.replace(/\/$/,'');
@@ -1600,7 +1607,7 @@ async function fetchHistory(sym){
 async function refreshLive(){
   state.posChains={};                    // drop cached position chains so P(assign) refreshes too
   if(!state.watch.length){ setLiveHint('Enter a ticker above and press Enter to pull its live options data.',false); renderPositions(); return; }
-  setLiveHint('Fetching…',false); let ok=0; state.erFail=[];   // re-judged fresh each pass
+  setLiveHint('Fetching…',false); let ok=0; state.erFail=[]; state.erReason=null;   // re-judged fresh each pass
   for(const s of state.watch){ const a=await fetchSymbol(s); await fetchEarnings(s); await fetchHistory(s); if(a) ok++;
     // With no expiry set (e.g. straight after a page reload), adopt the nearest real one from the first hit.
     if(!state.expiry && state.chains[s] && state.chains[s].expiry) state.expiry=state.chains[s].expiry; }
