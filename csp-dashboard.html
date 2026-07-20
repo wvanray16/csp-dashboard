@@ -285,7 +285,7 @@
       <input id="addTickerMain" type="text" placeholder="e.g. AAPL" spellcheck="false" autocomplete="off" />
       <button class="btn add" id="addTickerBtn">Add</button>
     </div>
-    <span class="hint" id="liveHint">Type any ticker symbol and press Enter to pull its live puts, calls, IV and earnings.</span>
+    <span class="hint" id="liveHint">Type a ticker — or paste a comma-separated list — and press Enter to pull live puts, calls, IV and earnings.</span>
     <div class="livebar-adv">
       <label for="backend">Data server</label>
       <input id="backend" type="text" value="http://localhost:3000" spellcheck="false" />
@@ -1483,14 +1483,15 @@ function renderChips(){
   const el=document.getElementById('chips');
   el.innerHTML=state.watch.map(s=>{const has=state.chains[s]&&state.chains[s].puts;const er=state.earnings[s];
     return `<span class="chip ${has?'has-data':''} ${passesUniv(s)?'':'dim'} ${s===state.hoverSym?'active':''}" data-chip="${s}">${s}${levBadge(s)}${er?`<span class="er">ER ${er.slice(5)}</span>`:''}<span class="x" data-sym="${s}">×</span></span>`;}).join('')
-    +`<input class="chip-add" id="addTick" placeholder="+ ADD" maxlength="6" />`;
+    /* no maxlength: this accepts a pasted comma-separated list, not just one 6-char symbol */
+    +`<input class="chip-add" id="addTick" placeholder="+ ADD" title="One symbol, or paste a comma-separated list" />`;
   el.querySelectorAll('.x').forEach(x=>x.onclick=(e)=>{e.stopPropagation();const sym=x.dataset.sym;state.watch=state.watch.filter(s=>s!==sym);saveWatch();
     if(state.hoverSym===sym) state.hoverSym=null; renderChips();render();});
   const activate=(sym)=>{ if(!passesUniv(sym)||state.hoverSym===sym) return; state.hoverSym=sym;
     el.querySelectorAll('[data-chip]').forEach(c=>c.classList.toggle('active', c.dataset.chip===sym)); render(); };
   el.querySelectorAll('[data-chip]').forEach(c=>{ const sym=c.dataset.chip; c.onclick=()=>activate(sym); });
   const add=document.getElementById('addTick');
-  add.onkeydown=(e)=>{if(e.key==='Enter'){const v=add.value; add.value=''; addTicker(v);}};
+  add.onkeydown=(e)=>{if(e.key==='Enter'){const v=add.value; add.value=''; addTickers(v);}};
 }
 
 /* Copy the whole watchlist (not just what the universe filter is showing) as a plain
@@ -1528,6 +1529,27 @@ function legacyCopy(text){
 
 /* Add any ticker the user types: validate, fetch live data, give feedback. Shared by the
    prominent livebar input and the inline "+ ADD" chip. */
+/* Accepts a single symbol or a pasted list — "BE,AMKR,GLW", spaces or newlines all work — so
+   the Export output from another browser drops back in as one paste instead of 20 entries.
+   Sequential, not parallel: each add pulls chain + earnings + history, and the FIRST one fixes
+   the expiry that every later fetch is requested against. */
+async function addTickers(input){
+  const syms=[...new Set(String(input||'').toUpperCase().split(/[^A-Z0-9.\-^]+/).filter(Boolean))];
+  if(!syms.length) return false;
+  if(syms.length===1) return addTicker(syms[0]);
+  let added=0, dupes=0; const failed=[];
+  for(let i=0;i<syms.length;i++){
+    const s=syms[i];
+    if(state.watch.includes(s)){ dupes++; continue; }
+    setLiveHint(`Loading ${s} — ${i+1} of ${syms.length}…`,false);
+    if(await addTicker(s)) added++; else failed.push(s);
+  }
+  const bits=[`Added ${added} of ${syms.length}`];
+  if(dupes) bits.push(`${dupes} already on the list`);
+  if(failed.length) bits.push(`could not load ${failed.join(', ')}`);
+  setLiveHint(bits.join(' · ')+'.', failed.length>0);
+  return added>0;
+}
 async function addTicker(sym){
   sym=(sym||'').trim().toUpperCase();
   if(!sym) return false;
@@ -1665,7 +1687,7 @@ function bind(){
   document.getElementById('connectBtn').onclick=()=>{state.backend=document.getElementById('backend').value.trim();refreshLive();};
   document.getElementById('backend').onchange=(e)=>state.backend=e.target.value.trim();
   const mainTick=document.getElementById('addTickerMain');
-  const submitTick=()=>{const v=mainTick.value; mainTick.value=''; addTicker(v); mainTick.focus();};
+  const submitTick=()=>{const v=mainTick.value; mainTick.value=''; addTickers(v); mainTick.focus();};
   mainTick.onkeydown=(e)=>{if(e.key==='Enter') submitTick();};
   document.getElementById('addTickerBtn').onclick=submitTick;
 
