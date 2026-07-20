@@ -800,20 +800,43 @@ function seedDemo(){
 seedDemo();
 
 /* ============================ PERSISTENCE ============================ */
-const PKEY='csp_positions_v2', HKEY='csp_holdings_v1', RKEY='csp_realized_v1', WKEY='csp_watch_v1', RLKEY='csp_rolls_v1';
+const PKEY='csp_positions_v2', HKEY='csp_holdings_v1', RKEY='csp_realized_v1', WKEY='csp_watch_v1', RLKEY='csp_rolls_v1', CCKEY='csp_cc_v1';
 function loadStore(){ try{ state.positions=JSON.parse(localStorage.getItem(PKEY))||[]; }catch(e){ state.positions=[]; }
   try{ state.holdings=JSON.parse(localStorage.getItem(HKEY))||[]; }catch(e){ state.holdings=[]; }
   try{ state.realized=JSON.parse(localStorage.getItem(RKEY))||[]; }catch(e){ state.realized=[]; }
   try{ state.rolls=JSON.parse(localStorage.getItem(RLKEY))||[]; }catch(e){ state.rolls=[]; }
   // Watchlist survives refreshes; only the tickers are stored — their live data is re-fetched on load.
   try{ const w=JSON.parse(localStorage.getItem(WKEY)); if(Array.isArray(w)) state.watch=w.filter(s=>typeof s==='string'&&s); }catch(e){}
-  state.positions.forEach(p=>{ if(!p.type) p.type='put'; }); }
+  state.positions.forEach(p=>{ if(!p.type) p.type='put'; });
+  // Restore the covered-call context. Only trust a saved holding index if the holding at that slot
+  // is still the same ticker; otherwise fall back rather than price calls against the wrong stock.
+  try{ const c=JSON.parse(localStorage.getItem(CCKEY));
+    if(c && typeof c==='object'){
+      const h=state.holdings[c.holdingIdx];
+      if(c.holdingIdx>=0 && h && h.sym===c.holdingSym) state.cc.holdingIdx=c.holdingIdx;
+      else { state.cc.holdingIdx=-1; if(c.sym) state.cc.sym=c.sym;
+             if(typeof c.cost==='number') state.cc.cost=c.cost;
+             if(typeof c.shares==='number'&&c.shares>0) state.cc.shares=c.shares; }
+    }
+  }catch(e){}
+  // No saved choice but shares are held? Default to the first holding — writing calls against stock
+  // you own is the point of the tab, and it beats inventing a cost basis from spot.
+  if(state.cc.holdingIdx<0 && !localStorage.getItem(CCKEY) && state.holdings.length) state.cc.holdingIdx=0;
+}
 function saveWatch(){ try{ localStorage.setItem(WKEY,JSON.stringify(state.watch)); }catch(e){} }
 function savePos(){ try{ localStorage.setItem(PKEY,JSON.stringify(state.positions)); }catch(e){} }
 function saveHold(){ try{ localStorage.setItem(HKEY,JSON.stringify(state.holdings)); }catch(e){} }
 function saveRealized(){ try{ localStorage.setItem(RKEY,JSON.stringify(state.realized)); }catch(e){} }
 function pushRealized(e){ state.realized.unshift(e); saveRealized(); }
 function saveRolls(){ try{ localStorage.setItem(RLKEY,JSON.stringify(state.rolls)); }catch(e){} }
+/* The covered-call context (which holding you're writing against, or a manual cost basis) has to
+   survive refreshes — otherwise the tab silently falls back to "Custom" with cost = spot, and every
+   income / if-called / breakeven figure is computed off a basis you never paid. We store the holding's
+   TICKER alongside its index so a reordered or deleted holdings list can't leave us pointing at the
+   wrong stock. */
+function saveCc(){ try{ const c=state.cc, h=state.holdings[c.holdingIdx];
+  localStorage.setItem(CCKEY,JSON.stringify({ holdingIdx:c.holdingIdx, holdingSym:h?h.sym:null,
+    sym:c.sym, cost:c.cost, shares:c.shares })); }catch(e){} }
 
 /* ---- realized-vol / IV-rank helpers ---- */
 function atmIV(sym){ const ch=state.chains[sym]; if(!ch) return null; const S=ch.spot;
@@ -1330,7 +1353,7 @@ function renderPositions(){
       <td><span class="btn sm" data-hdel="${i}" style="padding:2px 8px">✕</span></td></tr>`;
   }).join('');
   hb.querySelectorAll('[data-hdel]').forEach(b=>b.onclick=()=>{state.holdings.splice(+b.dataset.hdel,1);saveHold();renderPositions();});
-  hb.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>{ state.cc.holdingIdx=+b.dataset.sell; setView('calls'); });
+  hb.querySelectorAll('[data-sell]').forEach(b=>b.onclick=()=>{ state.cc.holdingIdx=+b.dataset.sell; state.cc.selKey=null; saveCc(); setView('calls'); });
   hb.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>closeHolding(+b.dataset.close));
 
   ensurePosChains();   // pulls any missing position-expiry chains, then re-renders once they land
@@ -1739,10 +1762,10 @@ function bind(){
   [['wInc','inc','wIncV'],['wCalled','called','wCalledV'],['wKeep','keep','wKeepV']].forEach(([id,key,vid])=>{
     document.getElementById(id).oninput=(e)=>{state.cc.w[key]=+e.target.value;document.getElementById(vid).textContent=e.target.value+'%';renderCalls();};});
   document.getElementById('ccHolding').onchange=(e)=>{state.cc.holdingIdx=+e.target.value;state.cc.selKey=null;
-    if(state.cc.holdingIdx<0){state.cc.cost=null;} renderCalls();};
-  document.getElementById('ccSym').onchange=(e)=>{state.cc.sym=e.target.value;state.cc.cost=null;state.cc.selKey=null;renderCalls();};
-  document.getElementById('ccCost').oninput=(e)=>{state.cc.cost=parseFloat(e.target.value)||null;renderCalls();};
-  document.getElementById('ccShares').oninput=(e)=>{state.cc.shares=parseInt(e.target.value)||0;renderCalls();};
+    if(state.cc.holdingIdx<0){state.cc.cost=null;} saveCc(); renderCalls();};
+  document.getElementById('ccSym').onchange=(e)=>{state.cc.sym=e.target.value;state.cc.cost=null;state.cc.selKey=null;saveCc();renderCalls();};
+  document.getElementById('ccCost').oninput=(e)=>{state.cc.cost=parseFloat(e.target.value)||null;saveCc();renderCalls();};
+  document.getElementById('ccShares').oninput=(e)=>{state.cc.shares=parseInt(e.target.value)||0;saveCc();renderCalls();};
   document.getElementById('ccExpiry').onchange=(e)=>{state.expiry=e.target.value;document.getElementById('expiry').value=e.target.value;if(state.mode==='live')refreshLive();else{render();renderCalls();}};
   ['ccOtmMin','ccOtmMax','ccDteMin','ccDteMax','ccMinOI'].forEach(id=>document.getElementById(id).oninput=()=>renderCalls());
   document.getElementById('ccAddBtn').onclick=()=>{const {ctx,rows}=buildCalls();const c=rows.find(x=>x.key===state.cc.selKey);if(!c)return;
