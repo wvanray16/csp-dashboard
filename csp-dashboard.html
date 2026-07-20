@@ -1224,7 +1224,7 @@ function pAssignFor(p){
   return p.type==='call'?g.callITM:g.putITM;
 }
 const POSCOLS=['Pos','Strike','Exp','DTE','Premium/ct','Qty','Capital','Mark','Unreal P&L','% capt.','P(assign)','Status','','',''];
-const HOLDCOLS=['Ticker','Shares','Cost basis','Price','Unreal P&L','','',''];
+const HOLDCOLS=['Ticker','Shares','Cost basis','Breakeven','Price','Unreal P&L','','',''];
 // Header tooltips, keyed by label (these two tables use plain string columns). Kept separate
 // because "Unreal P&L" means the contract's P&L in one table and the shares' P&L in the other.
 const POS_TIPS={
@@ -1245,10 +1245,25 @@ const HOLD_TIPS={
   'Ticker':'The stock you own — usually shares you received when a short put was assigned.',
   'Shares':'Number of shares held.',
   'Cost basis':'Your effective entry price per share. After a put assignment this is the strike minus the premium you collected, which is why it sits below the strike you sold.',
+  'Breakeven':'What these shares must reach for the whole wheel trade to be even, after every covered-call premium collected on them since assignment. It starts equal to your cost basis and drops with each call you sell — a call bought back at a loss nudges it back up. If the price is above this line you are actually ahead, even when Unreal P&L still shows red against the original cost basis.',
   'Price':'Current market price per share.',
   'Unreal P&L':'Unrealised profit or loss on the shares: (current price − cost basis) × shares.'
 };
 const thTip=(tips)=>(c)=>`<th${tips[c]?` title="${tips[c]}"`:''}>${c}</th>`;   // blank action columns get no tooltip
+
+/* Effective breakeven on assigned shares. The cost basis already nets off the PUT premium
+   (assignPut stores strike − credit), so the wheel's next leg is what moves this: every
+   covered call written on these shares lowers it. Open calls count their collected credit;
+   closed calls count realised P&L, so one bought back at a loss correctly pushes it back up.
+   Realised calls are filtered to this holding's lifetime so an earlier cycle in the same
+   ticker can't bleed in. Puts are excluded — their premium is already inside the cost basis. */
+function holdingBreakeven(h){
+  if(!h.shares) return h.costBasis;
+  let prem=0;
+  for(const p of state.positions) if(p.type==='call' && p.sym===h.sym) prem += p.credit*100*p.qty;
+  for(const e of state.realized) if(e.kind==='call' && e.sym===h.sym && (!h.opened || e.date>=h.opened)) prem += e.pnl;
+  return +(h.costBasis - prem/h.shares).toFixed(2);
+}
 function renderPositions(){
   document.getElementById('posCount').textContent=state.positions.length+state.holdings.length;
   document.getElementById('pCount').textContent=state.positions.length;
@@ -1304,8 +1319,10 @@ function renderPositions(){
   if(!state.holdings.length){ hb.innerHTML=`<tr><td colspan="${HOLDCOLS.length}"><div class="empty"><b>No assigned shares.</b><div class="small">When a short put is assigned, hit “assign” above to track the stock here.</div></div></td></tr>`; }
   else hb.innerHTML=state.holdings.map((h,i)=>{
     const ch=state.chains[h.sym], price=ch&&ch.spot?ch.spot:null, upnl=price!=null?(price-h.costBasis)*h.shares:null;
+    const be=holdingBreakeven(h);
     return `<tr>
       <td class="tk">${h.sym}${levBadge(h.sym)}</td><td>${h.shares}</td><td>$${h.costBasis.toFixed(2)}</td>
+      <td class="${be<h.costBasis?'pos':be>h.costBasis?'neg':''}">$${be.toFixed(2)}</td>
       <td>${price!=null?price.toFixed(2):'<span class="faint">—</span>'}</td>
       <td class="${upnl==null?'':upnl>=0?'pos':'neg'}">${upnl!=null?fmtMoney(upnl):'<span class="faint">—</span>'}</td>
       <td><span class="btn call sm" data-sell="${i}" style="padding:2px 8px">sell calls →</span></td>
