@@ -1149,7 +1149,10 @@ function ccSummary(ctx,rows,sel){
 }
 function drawCcPayoff(o,ctx){
   const svg=document.getElementById('ccPayoff'),who=document.getElementById('ccSigWho'),chips=document.getElementById('ccSigChips');
-  if(!o){svg.innerHTML='';who.textContent='—';chips.innerHTML='';return;}
+  /* ctx.cost is null until a cost basis exists — on a first Live refresh cc.sym is not yet set,
+     so the default-to-spot above finds no chain and leaves it null. Show the empty state rather
+     than throwing, which would abort the rest of refreshLive(). */
+  if(!o||ctx.cost==null){svg.innerHTML='';who.textContent='—';chips.innerHTML='';return;}
   who.innerHTML=`${ctx.sym} ${o.K} call <small>${o.expiry} · ${o.dte}d · cb $${ctx.cost.toFixed(0)}</small>`;
   payoffSVG(svg,{type:'call',prem:o.prem,K:o.K,S:o.S,be:o.be,premDollar:o.premDollar,cost:ctx.cost});
   chips.innerHTML=`<div class="mchip"><div class="ck">If-called ann.</div><div class="cv c">${fmtPct(o.ifCalledAnnual,1)}</div></div>
