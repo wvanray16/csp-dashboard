@@ -1246,12 +1246,13 @@ function pAssignFor(p){
   const T=Math.max(0,dteFrom(p.exp))/365, g=greeks(pc.spot,p.strike,T,num('rate')/100,row[3]);
   return p.type==='call'?g.callITM:g.putITM;
 }
-const POSCOLS=['Pos','Strike','Exp','DTE','Premium/ct','Qty','Capital','Mark','Unreal P&L','% capt.','P(assign)','Status','','',''];
+const POSCOLS=['Pos','Date','Strike','Exp','DTE','Premium/ct','Qty','Capital','Mark','Unreal P&L','% capt.','P(assign)','Status','','',''];
 const HOLDCOLS=['Ticker','Shares','Cost basis','Breakeven','Price','Unreal P&L','','',''];
 // Header tooltips, keyed by label (these two tables use plain string columns). Kept separate
 // because "Unreal P&L" means the contract's P&L in one table and the shares' P&L in the other.
 const POS_TIPS={
   'Pos':'The ticker, and whether you sold a PUT or a CALL.',
+  'Date':'The date you opened this position, shown as month-day (hover the cell for the full date). Rolling a position keeps this original open date, so you can still see how long you have been in the trade across every roll.',
   'Strike':'The strike you sold. For a put, the price you would buy the shares at if assigned; for a call, the price your shares would be sold at.',
   'Exp':'Expiration date of the contract.',
   'DTE':'Days to expiry — days left until this contract expires.',
@@ -1321,6 +1322,7 @@ function renderPositions(){
       : '';
     return `<tr>
       <td class="tk">${p.sym}${levBadge(p.sym)}<span class="typetag ${p.type}">${p.type==='call'?'CALL':'PUT'}</span></td>
+      <td title="${p.opened||''}">${p.opened?p.opened.slice(5):'<span class="faint">—</span>'}</td>
       <td>${p.strike.toFixed(2)}</td><td>${p.exp.slice(5)}</td><td>${dte}</td>
       <td>$${(p.credit*100).toFixed(0)}</td><td>${p.qty}</td><td>${p.type==='call'?'—':fmtMoney(p.strike*100*p.qty)}</td>
       <td>${m!=null?m.toFixed(2):'<span class="faint">—</span>'}</td>
