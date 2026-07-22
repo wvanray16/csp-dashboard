@@ -1067,7 +1067,7 @@ function buildCandidates(){
       const prem=state.basis==='bid'?bid:(bid+ask)/2; if(prem<=0) continue;
       const staticRet=prem/K, annual=staticRet*(365/dte); if(annual<minYield) continue;
       const be=K-prem, g=greeks(S,K,T,r,iv);
-      out.push({ key:sym+'|'+K, sym, K, expiry, dte, S, iv, oi, bid, ask, prem, premDollar:prem*100, cap:K*100,
+      out.push({ key:sym+'|'+K, sym, K, expiry, dte, S, dayPct:(ch.dayPct??null), iv, oi, bid, ask, prem, premDollar:prem*100, cap:K*100,
         staticRet, annual, be, cushion:(S-be)/S, delta:g.putDelta, pAssign:g.putITM, pop:1-g.putITM,
         spread: (bid+ask)>0 ? (ask-bid)/((bid+ask)/2) : null,                                  // as a % of mid
         pos52: tr ? Math.max(0,Math.min(100,(S-tr.lo52)/((tr.hi52-tr.lo52)||1)*100)) : null,   // 0 = at 52w low
@@ -1081,7 +1081,13 @@ function buildCandidates(){
   return out;
 }
 const PCOLS=[
-  {key:'sym',label:'Ticker'},{key:'S',label:'Spot',fmt:(o)=>o.S.toFixed(2)},{key:'dte',label:'DTE',fmt:(o)=>o.dte},
+  {key:'sym',label:'Ticker'},{key:'S',label:'Spot',fmt:(o)=>o.S.toFixed(2)},
+  // Day change of the underlying. Rule 1 of the Criteria tab wants a red day of 1%+; a down day
+  // that clears that bar is shown bold so it stands out as an eligible entry.
+  {key:'dayPct',label:'Day',fmt:(o)=>{ if(o.dayPct==null) return '<span class="faint">—</span>';
+    const d=o.dayPct, meets=d<=-1; const cls=d>0?'pos':(d<0?'neg':'faint'); const arr=d>0?'▲':(d<0?'▼':'');
+    return `<span class="${cls}"${meets?' style="font-weight:700" title="Meets rule 1 — down ≥1% today"':''}>${arr} ${Math.abs(d).toFixed(1)}%</span>`; }},
+  {key:'dte',label:'DTE',fmt:(o)=>o.dte},
   {key:'K',label:'Strike',fmt:(o)=>'<b>'+o.K.toFixed(2)+'</b>'},{key:'be',label:'Breakeven',fmt:(o)=>o.be.toFixed(2)},
   {key:'er',label:'Earnings',fmt:(o)=>o.er?(o.throughER?`<span class="erbadge">⚠ ${o.er.slice(5)}</span>`:`<span class="erclear">${o.er.slice(5)}</span>`):'<span class="faint">—</span>',val:(o)=>o.throughER?1:0},
   {key:'prem',label:'Premium',fmt:(o)=>o.prem.toFixed(2)},
@@ -1105,6 +1111,7 @@ const PCOLS=[
 const PCOL_TIPS={
   sym:'The stock / ETF, with the option expiration date shown beneath it.',
   S:'Spot — the current price of the underlying stock or ETF.',
+  dayPct:"Day — the underlying's percent change since the previous close. Criteria rule 1 is to sell only on a red day of 1% or more; those rows show in bold.",
   dte:'DTE — days until this option expires.',
   K:'Strike — the price you agree to buy the shares at if the put is assigned.',
   be:'Breakeven — the price where this trade breaks even at expiration: strike − premium. Below this you begin to lose money.',
@@ -1797,7 +1804,7 @@ async function fetchSymbol(sym){
     catch(e){ throw new Error("can't reach the data server — check your connection"); }
     if(!r.ok) throw new Error(r.status===500?'no data — is that a valid ticker?':'server error (HTTP '+r.status+')'); const j=await r.json();
     const mp=(arr)=>(arr||[]).map(p=>[p.strike,p.bid??0,p.ask??0,p.impliedVolatility??p.iv??0,p.openInterest??p.oi??0]).filter(p=>p[0]);
-    state.chains[sym]={ spot:j.underlyingPrice??j.spot??0, expiry:j.expiration||state.expiry,
+    state.chains[sym]={ spot:j.underlyingPrice??j.spot??0, dayPct:(j.dayChangePct??null), expiry:j.expiration||state.expiry,
       expirations:j.expirationDates||j.expirations||[state.expiry], puts:mp(j.puts), calls:mp(j.calls) };
     state.meta[sym]={ name:j.name||null, quoteType:j.quoteType||null, lev:computeLev(j.name, j.quoteType) };
     return true;

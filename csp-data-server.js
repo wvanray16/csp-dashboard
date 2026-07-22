@@ -111,6 +111,9 @@ const arr = (x) => (Array.isArray(x) ? x : x == null ? [] : [x]);
 const num = (x) => (x == null || x === "" ? 0 : Number(x) || 0);
 const mapType = (t) => (t === "stock" ? "EQUITY" : t ? String(t).toUpperCase() : null);   // -> dashboard's quoteType
 const ivOf = (g) => num(g?.mid_iv) || num(g?.smv_vol) || ((num(g?.bid_iv) + num(g?.ask_iv)) / 2) || 0;
+/* The day's move, computed against the SAME spot the dashboard shows so the two never disagree.
+   Uses Tradier's prevclose; returns null when it is unavailable rather than a misleading 0. */
+const dayChangePct = (q, spot) => { const prev = num(q?.prevclose); return prev > 0 ? +(((spot - prev) / prev) * 100).toFixed(2) : null; };
 
 async function getQuote(symbol) {
   const j = await tradier("/markets/quotes", { symbols: symbol });
@@ -140,7 +143,7 @@ app.get("/options", async (req, res) => {
     const ej = await tradier("/markets/options/expirations", { symbol, includeAllRoots: "true", strikes: "false" });
     const expirations = arr(ej?.expirations?.date).map(String);
     if (!expirations.length) {
-      return res.json({ symbol, underlyingPrice: spot, quoteType: mapType(q.type), name: q.description || null,
+      return res.json({ symbol, underlyingPrice: spot, dayChangePct: dayChangePct(q, spot), quoteType: mapType(q.type), name: q.description || null,
         expiration: null, expirationDates: [], calls: [], puts: [] });
     }
     const wanted = String(req.query.date || "");
@@ -157,7 +160,7 @@ app.get("/options", async (req, res) => {
     const calls = opts.filter(o => o.option_type === "call").map(map).sort((a, b) => a.strike - b.strike);
     const puts  = opts.filter(o => o.option_type === "put").map(map).sort((a, b) => a.strike - b.strike);
 
-    res.json({ symbol, underlyingPrice: spot, quoteType: mapType(q.type), name: q.description || null,
+    res.json({ symbol, underlyingPrice: spot, dayChangePct: dayChangePct(q, spot), quoteType: mapType(q.type), name: q.description || null,
       expiration, expirationDates: expirations, calls, puts });
   } catch (err) { console.error("[/options]", err.message); res.status(500).json({ error: err.message }); }
 });
