@@ -240,6 +240,25 @@
   .ins-disc{border:1px solid rgba(229,104,122,0.3);background:rgba(229,104,122,0.05);border-radius:9px;
     padding:14px 16px;margin:26px 0 0;font-size:11.5px;color:var(--muted);line-height:1.65}
   .ins-disc b{color:var(--risk)}
+  /* ---- Criteria view (reuses .ins base) ---- */
+  .crit-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;flex:none;
+    border-radius:50%;background:var(--panel-2);border:1px solid var(--border);color:var(--yield);
+    font-size:11px;font-weight:700;margin-right:10px}
+  .crit-thr{display:inline-block;background:rgba(63,182,139,0.13);border:1px solid rgba(63,182,139,0.4);
+    color:#aef0d6;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:700;white-space:nowrap}
+  .crit-where{font-size:11px;color:var(--faint);margin-top:3px}
+  .crit-where b{color:var(--muted);font-weight:500}
+  .crit-rule{display:flex;align-items:baseline;gap:10px;margin:28px 0 4px}
+  .crit-rule h3{font-family:var(--display);font-size:16px;margin:0;letter-spacing:-0.005em}
+  .crit-tbl td:nth-child(3){white-space:nowrap;color:var(--yield);font-weight:700}
+  .crit-routine{counter-reset:step;list-style:none;padding-left:0;margin:12px 0}
+  .crit-routine li{counter-increment:step;position:relative;padding:7px 0 7px 34px;font-size:12.5px;
+    color:var(--muted);line-height:1.6;border-bottom:1px solid var(--border-soft)}
+  .crit-routine li:last-child{border-bottom:0}
+  .crit-routine li::before{content:counter(step);position:absolute;left:0;top:6px;width:22px;height:22px;
+    display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--panel-2);
+    border:1px solid var(--border);color:var(--spot);font-family:var(--mono);font-size:11px;font-weight:700}
+  .crit-routine li b{color:var(--text)}
   .posform{display:grid;grid-template-columns:repeat(6,1fr) auto;gap:10px;align-items:end}
   .posform .fld label{font-size:9.5px}
   .postiles{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0 16px}
@@ -276,7 +295,8 @@
     <button data-view="positions" id="navPos">Positions &amp; holdings<span class="c" id="posCount">0</span></button>
     <button data-view="rolls" id="navRolls">Rollover<span class="c" id="rollCount">0</span></button>
     <button data-view="history" id="navHist">History<span class="c" id="histCount">0</span></button>
-    <button data-view="instruction" id="navIns" style="margin-left:auto">Instruction</button>
+    <button data-view="criteria" id="navCrit" style="margin-left:auto">Criteria</button>
+    <button data-view="instruction" id="navIns">Instruction</button>
   </nav>
 
   <div class="livebar" id="livebar">
@@ -731,6 +751,148 @@
         Options carry risk of substantial loss, including losses larger than the premium collected.
         Assignment can occur early, before expiration. Decide what you can afford to lose, and
         consult a licensed financial professional about your own circumstances.</div>
+    </section>
+
+   </div>
+  </div>
+
+  <div class="view" id="viewCriteria">
+   <div class="ins">
+
+    <div class="ins-hero">
+      <h2>Pre-trade <span>criteria</span></h2>
+      <p>The checklist to run before selling any cash-secured put. Every box should be ticked — a
+         trade that misses one is a trade to skip, not to talk yourself into. Read each figure off
+         the Put screen columns named below.</p>
+      <div class="ins-toc">
+        <a href="#crit-summary">The checklist</a>
+        <a href="#crit-detail">Each rule, in detail</a>
+        <a href="#crit-conflict">When rules collide</a>
+        <a href="#crit-routine">The routine</a>
+      </div>
+    </div>
+
+    <section id="crit-summary">
+      <h3><span class="n">—</span>The checklist at a glance</h3>
+      <table class="ins-tbl crit-tbl">
+        <thead><tr><th>#</th><th>Rule</th><th>Threshold</th><th>Where to read it</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Enter on a down day</td><td>stock ≤ −1% today</td><td>the day's move (see note)</td></tr>
+          <tr><td>2</td><td>Expiry about a month out</td><td>28–35 DTE</td><td>DTE column · Expiration selector</td></tr>
+          <tr><td>3</td><td>No earnings before expiry</td><td>no ⚠ badge</td><td>Earnings column</td></tr>
+          <tr><td>4</td><td>Tight bid-ask spread</td><td>≤ 10%</td><td>Spread column</td></tr>
+          <tr><td>5</td><td>Assignment odds in the zone</td><td>20% – 30%</td><td>P(assign) column</td></tr>
+          <tr><td>6</td><td>Enough reward for the capital</td><td>Static ≥ 4%</td><td>Static column</td></tr>
+        </tbody>
+      </table>
+      <div class="ins-note"><b>All six, not most.</b> These are gates, not a score. A 5% static with
+        a 45% assignment probability is not a "good enough" trade — it fails rule 5 and is off the
+        table. The point of a checklist is that it stops the trade you would otherwise rationalize.</div>
+    </section>
+
+    <section id="crit-detail">
+      <h3><span class="n">—</span>Each rule, in detail</h3>
+
+      <div class="crit-rule"><span class="crit-num">1</span><h3>Enter only on a red day</h3></div>
+      <p><span class="crit-thr">stock down ≥ 1% on the day</span></p>
+      <p>Sell into weakness, not strength. When a stock drops, its implied volatility rises, and
+         higher IV means fatter premiums for the same strike — you are paid more to make the same
+         promise. Selling puts on a green day is selling cheap insurance; selling on a red day is
+         selling it when buyers are anxious and willing to overpay.</p>
+      <div class="crit-where"><b>Read it from:</b> the underlying's move on the day. The screener
+        does not surface day-change yet — check the quote on your broker or a chart before you
+        commit. <i>(Ask and I can add a day-change indicator to the screen.)</i></div>
+
+      <div class="crit-rule"><span class="crit-num">2</span><h3>Set the expiry about a month out</h3></div>
+      <p><span class="crit-thr">28 – 35 days to expiry</span></p>
+      <p>Time decay (theta) accelerates in the final month of an option's life, so ~30 DTE captures
+         the steep part of the decay curve while keeping your capital committed for only a few weeks.
+         Shorter than ~three weeks and the premium is too thin for the assignment risk; much longer
+         and you tie up cash while decay is still slow and more can go wrong.</p>
+      <div class="crit-where"><b>Read it from:</b> the <b>DTE</b> column. Set the <b>Expiration</b>
+        selector to a date ~1 month out, or narrow the <b>Days to expiry</b> filter to 28–35.</div>
+
+      <div class="crit-rule"><span class="crit-num">3</span><h3>Never sell through earnings</h3></div>
+      <p><span class="crit-thr">no earnings date before expiry</span></p>
+      <p>A single earnings report can move a stock more than weeks of collected premium, in a
+         direction no model predicts. The elevated IV before earnings is not free money — it is the
+         market pricing a known, binary event. If the ⚠ badge is showing, the expiry lands after the
+         next report; pick a nearer expiry or skip the name.</p>
+      <div class="crit-where"><b>Read it from:</b> the <b>Earnings</b> column — a ⚠ badge means
+        through-earnings. Flip <b>Earnings exposure → Pre-earnings only</b> to hide those rows
+        entirely. <i>(On the SOFI screen you were looking at, every 08-21 row shows ⚠ 07-29 — that
+        whole expiry is through earnings, so none of it qualifies.)</i></div>
+
+      <div class="crit-rule"><span class="crit-num">4</span><h3>Keep the spread tight</h3></div>
+      <p><span class="crit-thr">bid-ask spread ≤ 10% of mid</span></p>
+      <p>A wide spread means the mid price the screener shows is fiction — you will fill closer to
+         the bid, and if you need to buy the contract back early it costs you again on the way out.
+         Tight spreads are a sign of a liquid, actively traded contract. Leveraged single-stock ETFs
+         and far out-of-the-money strikes are the usual offenders.</p>
+      <div class="crit-where"><b>Read it from:</b> the <b>Spread</b> column. Anything over 10% —
+        and especially the 100–200% rows on illiquid strikes — is disqualified.</div>
+
+      <div class="crit-rule"><span class="crit-num">5</span><h3>Assignment odds in the zone</h3></div>
+      <p><span class="crit-thr">P(assign) between 20% and 30%</span></p>
+      <p>This is the balance the wheel is built on. Below 20%, the strike is so far out that the
+         premium barely compensates for the capital tied up. Above 30%, you are taking on more
+         assignment risk than the strategy intends — closer to just buying the stock. The 20–30%
+         band is the sweet spot: meaningful premium, controlled odds of being put the shares.</p>
+      <div class="crit-where"><b>Read it from:</b> the <b>P(assign)</b> column (shown red at 50%+).
+        It is a Black-Scholes estimate, not a guarantee.</div>
+
+      <div class="crit-rule"><span class="crit-num">6</span><h3>Enough static return</h3></div>
+      <p><span class="crit-thr">Static ≥ 4%</span></p>
+      <p>Static is the return if the put simply expires worthless — premium ÷ strike — the plain,
+         un-annualized reward for the ~month of committed capital. Four percent over roughly a month
+         is a demanding bar; it filters out low-premium strikes that are not worth the cash they
+         lock up.</p>
+      <div class="crit-where"><b>Read it from:</b> the <b>Static</b> column (not Ann. yield, which
+        annualizes and looks larger).</div>
+    </section>
+
+    <section id="crit-conflict">
+      <h3><span class="n">—</span>When two rules collide</h3>
+      <p>Rules 5 and 6 pull in opposite directions, and on some names they cannot both be met. A
+         lower strike is safer — lower <em>P(assign)</em> — but collects less premium, so lower
+         <em>Static</em>. A higher strike does the reverse. Whether a stock offers a strike that is
+         both ≤ 30% assignment <strong>and</strong> ≥ 4% static depends on its price and how much
+         implied volatility it carries.</p>
+      <div class="ins-note ins-warn"><b>A worked example from your own screen.</b> SOFI at $17.61,
+        31 DTE: the strikes with Static ≥ 4% (17.00, 16.50, 16.00) all carry P(assign) of 35–46% —
+        too high. The strikes with P(assign) in the 20–30% zone (15.50, 15.00, 14.50) all have
+        Static of 2.0–3.2% — too low. <b>No SOFI strike satisfies both.</b> That is not a glitch; a
+        $17 stock at this IV simply does not pay 4% static at 25% assignment odds. Higher-priced or
+        higher-IV names clear both bars more easily.</div>
+      <p>When they conflict, decide in advance which rule leads — and hold to it rather than choosing
+         per-trade to justify the position in front of you:</p>
+      <ul>
+        <li><strong>Safety-first:</strong> honor P(assign) 20–30% and accept the lower static. You
+            wanted the shares at that strike anyway.</li>
+        <li><strong>Income-first:</strong> honor Static ≥ 4% and accept the higher assignment odds —
+            only on a stock you are genuinely happy to own.</li>
+        <li><strong>Neither fits:</strong> skip the name. A checklist you can always satisfy is not a
+            filter. Some names simply will not qualify this month, and that is the system working.</li>
+      </ul>
+    </section>
+
+    <section id="crit-routine">
+      <h3><span class="n">—</span>The routine, in order</h3>
+      <ol class="crit-routine">
+        <li>Wait for a <b>red day</b> — the underlying down 1% or more. No red day, no new put.</li>
+        <li>Set the <b>Expiration</b> to roughly one month out (28–35 DTE).</li>
+        <li>Flip <b>Earnings exposure → Pre-earnings only</b> so no through-earnings rows can slip in.</li>
+        <li>Scan the <b>Spread</b> column and ignore anything over 10%.</li>
+        <li>Find the strike whose <b>P(assign)</b> sits in 20–30%.</li>
+        <li>Confirm that strike's <b>Static</b> is ≥ 4%. If it is not, apply your conflict rule above.</li>
+        <li>Only if all six pass: size it to capital you can cover, and log it in <b>Positions</b>.</li>
+      </ol>
+      <div class="ins-disc"><b>Educational material only.</b> This is a personal checklist for
+        applying the cash-secured put strategy — not investment advice, not a recommendation to
+        trade any security shown, and not a claim that these thresholds are right for anyone else.
+        Options carry risk of substantial loss, including losses larger than the premium collected,
+        and assignment can occur early. Decide what you can afford to lose, and consult a licensed
+        financial professional about your own circumstances.</div>
     </section>
 
    </div>
@@ -1706,14 +1868,16 @@ function setView(v){
   document.getElementById('navRolls').classList.toggle('on',v==='rolls');
   document.getElementById('navHist').classList.toggle('on',v==='history');
   document.getElementById('navIns').classList.toggle('on',v==='instruction');
+  document.getElementById('navCrit').classList.toggle('on',v==='criteria');
   document.getElementById('viewScreener').classList.toggle('on',v==='screener');
   document.getElementById('viewCalls').classList.toggle('on',v==='calls');
   document.getElementById('viewPositions').classList.toggle('on',v==='positions');
   document.getElementById('viewRolls').classList.toggle('on',v==='rolls');
   document.getElementById('viewHistory').classList.toggle('on',v==='history');
   document.getElementById('viewInstruction').classList.toggle('on',v==='instruction');
+  document.getElementById('viewCriteria').classList.toggle('on',v==='criteria');
   /* the ticker bar drives the live screens; on a reading page it is just noise */
-  document.getElementById('livebar').classList.toggle('show', state.mode==='live' && v!=='instruction');
+  document.getElementById('livebar').classList.toggle('show', state.mode==='live' && v!=='instruction' && v!=='criteria');
   if(v==='calls') renderCalls(); if(v==='positions') renderPositions(); if(v==='rolls') renderRolls(); if(v==='history') renderHistory();
 }
 
@@ -1727,6 +1891,7 @@ function bind(){
   document.getElementById('navRolls').onclick=()=>setView('rolls');
   document.getElementById('navHist').onclick=()=>setView('history');
   document.getElementById('navIns').onclick=()=>setView('instruction');
+  document.getElementById('navCrit').onclick=()=>setView('criteria');
   document.getElementById('connectBtn').onclick=()=>{state.backend=document.getElementById('backend').value.trim();refreshLive();};
   document.getElementById('backend').onchange=(e)=>state.backend=e.target.value.trim();
   const mainTick=document.getElementById('addTickerMain');
